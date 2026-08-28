@@ -31,4 +31,3 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           #PINTEREST_TOKEN: ${{ secrets.PINTEREST_TOKEN }}
           #PINTEREST_BOARD_ID: ${{ secrets.PINTEREST_BOARD_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
