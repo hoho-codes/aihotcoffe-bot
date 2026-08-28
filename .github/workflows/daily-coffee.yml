@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install huggingface_hub requests
+        run: pip install huggingface_hub requests Pillow
 
       - name: Run daily coffee
         run: python coffee.py
