@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: pip install huggingface_hub requests
 
-      - name: Run daily coffee post
-        run: python post_coffee.py
+      - name: Run daily coffee
+        run: python coffee.py
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           #PINTEREST_TOKEN: ${{ secrets.PINTEREST_TOKEN }}
