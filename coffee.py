@@ -11,7 +11,7 @@ HF_TOKEN = os.environ["HF_TOKEN"]
 #PINTEREST_TOKEN = os.environ["PINTEREST_TOKEN"]
 #BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g. "user/repo"
-GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "main")
+GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "coffee")
 IMAGE_FILENAME = "images/generated_image.png"
 
 PROMPTS = [
