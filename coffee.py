@@ -33,7 +33,7 @@ def generate_image():
 # - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
 # - "stabilityai/stable-diffusion-xl-base-1.0"
     model_id = "black-forest-labs/FLUX.1-schnell"
-    image = client.text_to_image(prompt=prompt,)
+    image = client.text_to_image(prompt=prompt,model=model_id)
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
     return prompt
