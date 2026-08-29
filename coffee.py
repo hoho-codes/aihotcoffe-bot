@@ -28,10 +28,35 @@ PROMPTS = [
     "a coffee cup on an outdoor cafe table, european street in background, golden hour",
 ]
 
+def generate_prompt():
+    print("Generating prompt with AI...")
+    client = InferenceClient(token=HF_TOKEN)
+    
+    system_instruction = (
+        "You are a creative assistant that writes short, vivid prompts for an "
+        "AI image generator. Each prompt must be a single coffee/cafe themed "
+        "scene, under 25 words, describing lighting, setting, and mood. "
+        "Do not repeat common phrasing. Return ONLY the prompt text, nothing else."
+    )
+    
+    response = client.chat_completion(
+        messages=[
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": "Generate one new coffee-themed image prompt."},
+        ],
+        model="meta-llama/Llama-3.1-8B-Instruct",  # or another instruct model available on HF Inference
+        max_tokens=60,
+        temperature=1.0,
+    )
+    
+    prompt = response.choices[0].message.content.strip().strip('"')
+    print(f"Generated prompt: {prompt}")
+    return prompt
 
 def generate_image():
     print("Generating image...")
-    prompt = random.choice(PROMPTS)
+    #prompt = random.choice(PROMPTS)
+    prompt = generate_prompt()
     client = InferenceClient(token=HF_TOKEN)
     client.headers["x-use-cache"] = "0"
 # model choices:
