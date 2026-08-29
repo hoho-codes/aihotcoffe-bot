@@ -132,11 +132,15 @@ def refresh_tumblr_token():
         },
         timeout=30,
     )
+    if res.status_code != 200:
+        print(f"Tumblr refresh error body: {res.text}")
     res.raise_for_status()
     data = res.json()
-    print("Tumblr token refreshed.")
+    new_refresh_token = data.get("refresh_token")
+    if new_refresh_token and new_refresh_token != TUMBLR_REFRESH_TOKEN:
+        print("NOTE: Tumblr issued a new refresh token — update your GitHub secret with this value:")
+        print(new_refresh_token)
     return data["access_token"]
-
 
 def publish_to_tumblr(access_token, image_url, caption):
     print("Publishing to Tumblr...")
