@@ -5,6 +5,7 @@ import subprocess
 import sys
 from huggingface_hub import InferenceClient
 import requests
+from nacl import encoding, public
 
 # --- Config from environment/secrets ---
 HF_TOKEN = os.environ["HF_TOKEN"]
@@ -18,6 +19,10 @@ TUMBLR_CONSUMER_KEY = os.environ["TUMBLR_CONSUMER_KEY"]
 TUMBLR_CONSUMER_SECRET = os.environ["TUMBLR_CONSUMER_SECRET"]
 TUMBLR_REFRESH_TOKEN = os.environ["TUMBLR_REFRESH_TOKEN"]
 TUMBLR_BLOG_NAME = os.environ["TUMBLR_BLOG_NAME"]
+
+GH_PAT = os.environ["GH_PAT"]  # Personal Access Token with repo scope, for updating secrets
+GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]
+GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "main")
 
 PROMPTS = [
     "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
@@ -36,7 +41,8 @@ def generate_prompt():
         "You are a creative assistant that writes short, vivid prompts for an "
         "AI image generator. Each prompt must be a single coffee/cafe themed "
         "scene, under 25 words, describing lighting, setting, and mood. "
-        "Do not repeat common phrasing. Return ONLY the prompt text, nothing else."
+        "Must include a coffee cup/glass in the image. Do not repeat common phrasing. "
+        "Return ONLY the prompt text, nothing else."
     )
     
     response = client.chat_completion(
@@ -101,6 +107,30 @@ def remove_image():
     git_run("commit", "-m", "Remove published image")
     git_run("push")
 
+# ---------- GitHub secret update ----------
+
+def update_github_secret(secret_name, secret_value):
+    headers = {"Authorization": f"token {GH_PAT}", "Accept": "application/vnd.github+json"}
+
+    key_res = requests.get(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/public-key",
+        headers=headers,
+    )
+    key_res.raise_for_status()
+    key_data = key_res.json()
+
+    public_key = public.PublicKey(key_data["key"].encode("utf-8"), encoding.Base64Encoder())
+    sealed_box = public.SealedBox(public_key)
+    encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+    encrypted_b64 = encoding.Base64Encoder().encode(encrypted).decode("utf-8")
+
+    put_res = requests.put(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/{secret_name}",
+        headers=headers,
+        json={"encrypted_value": encrypted_b64, "key_id": key_data["key_id"]},
+    )
+    put_res.raise_for_status()
+    print(f"Updated secret {secret_name} in {GITHUB_REPO}")
 
 #def publish_to_pinterest(image_url, caption):
 #    print("Publishing to Pinterest...")
@@ -120,6 +150,8 @@ def remove_image():
 #    )
 #    return res
 
+# ---------- Tumblr ----------
+
 def refresh_tumblr_token():
     print("Refreshing Tumblr access token...")
     res = requests.post(
@@ -136,11 +168,19 @@ def refresh_tumblr_token():
         print(f"Tumblr refresh error body: {res.text}")
     res.raise_for_status()
     data = res.json()
+    print("Tumblr token refreshed.")
+
     new_refresh_token = data.get("refresh_token")
     if new_refresh_token and new_refresh_token != TUMBLR_REFRESH_TOKEN:
-        print("NOTE: Tumblr issued a new refresh token — update your GitHub secret with this value:")
-        print(new_refresh_token)
+        print("Tumblr issued a new refresh token — updating GitHub secret...")
+        try:
+            update_github_secret("TUMBLR_REFRESH_TOKEN", new_refresh_token)
+        except Exception as e:
+            print(f"WARNING: failed to update TUMBLR_REFRESH_TOKEN secret: {e}")
+            print("Next run may fail with invalid_grant unless updated manually.")
+
     return data["access_token"]
+
 
 def publish_to_tumblr(access_token, image_url, caption):
     print("Publishing to Tumblr...")
