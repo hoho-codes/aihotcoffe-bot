@@ -20,6 +20,9 @@ TUMBLR_CONSUMER_SECRET = os.environ["TUMBLR_CONSUMER_SECRET"]
 TUMBLR_REFRESH_TOKEN = os.environ["TUMBLR_REFRESH_TOKEN"]
 TUMBLR_BLOG_NAME = os.environ["TUMBLR_BLOG_NAME"]
 
+BSKY_HANDLE = os.environ["BSKY_HANDLE"]          # e.g. "aihotcoffee.bsky.social"
+BSKY_APP_PASSWORD = os.environ["BSKY_APP_PASSWORD"]
+
 GH_PAT = os.environ["GH_PAT"]  # Personal Access Token with repo scope, for updating secrets
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]
 GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "main")
@@ -198,6 +201,69 @@ def publish_to_tumblr(access_token, image_url, caption):
     )
     return res
 
+# ---------- BlSky ----------
+
+def bsky_login():
+    print("Logging into Bluesky...")
+    res = requests.post(
+        "https://bsky.social/xrpc/com.atproto.server.createSession",
+        json={"identifier": BSKY_HANDLE, "password": BSKY_APP_PASSWORD},
+        timeout=30,
+    )
+    res.raise_for_status()
+    data = res.json()
+    return data["accessJwt"], data["did"]
+
+
+def bsky_upload_image(access_jwt, image_path):
+    print("Uploading image to Bluesky...")
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+    res = requests.post(
+        "https://bsky.social/xrpc/com.atproto.repo.uploadBlob",
+        headers={
+            "Authorization": f"Bearer {access_jwt}",
+            "Content-Type": "image/png",
+        },
+        data=image_bytes,
+        timeout=60,
+    )
+    res.raise_for_status()
+    return res.json()["blob"]
+
+
+def publish_to_bluesky(image_path, caption):
+    try:
+        access_jwt, did = bsky_login()
+        blob = bsky_upload_image(access_jwt, image_path)
+
+        post_record = {
+            "collection": "app.bsky.feed.post",
+            "repo": did,
+            "record": {
+                "$type": "app.bsky.feed.post",
+                "text": caption,
+                "createdAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "embed": {
+                    "$type": "app.bsky.embed.images",
+                    "images": [
+                        {"alt": "Coffee at a cafe", "image": blob}
+                    ],
+                },
+            },
+        }
+
+        res = requests.post(
+            "https://bsky.social/xrpc/com.atproto.repo.createRecord",
+            headers={"Authorization": f"Bearer {access_jwt}"},
+            json=post_record,
+            timeout=30,
+        )
+        return res
+    except Exception as e:
+        print(f"Bluesky error: {e}")
+        return None
+
 def main():
     prompt = generate_image()
     image_url = commit_image()
@@ -214,6 +280,14 @@ def main():
  #   else:
  #       print(f"Pinterest: publish failed ({pin_res.status_code}): {pin_res.text}")
  #       all_ok = False
+
+    # --- Bluesky ---
+    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"Coffee time ☕ {prompt}")
+    if bsky_res is not None and bsky_res.status_code == 200:
+        print("Bluesky: published successfully:", bsky_res.json())
+    else:
+        print(f"Bluesky: publish failed: {bsky_res.text if bsky_res else 'exception before request'}")
+        all_ok = False
 
     # --- Tumblr ---
     try:
