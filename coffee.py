@@ -218,7 +218,7 @@ def main():
     # --- Tumblr ---
     try:
         tumblr_access_token = refresh_tumblr_token()
-        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"Coffee time ☕ {prompt}")
+        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"Coffee time ☕ \n{prompt}")
         if tumblr_res.status_code in (200, 201):
             print("Tumblr: published successfully:", tumblr_res.json())
         else:
