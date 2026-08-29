@@ -35,4 +35,6 @@ jobs:
           TUMBLR_CONSUMER_SECRET: ${{ secrets.TUMBLR_CONSUMER_SECRET }}
           TUMBLR_REFRESH_TOKEN: ${{ secrets.TUMBLR_REFRESH_TOKEN }}
           TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
+          BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
+          BSKY_APP_PASSWORD: ${{ secrets.BSKY_APP_PASSWORD }}
           GH_PAT: ${{ secrets.GH_PAT }}
