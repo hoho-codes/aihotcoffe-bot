@@ -184,9 +184,7 @@ def main():
         print(f"Tumblr: error during refresh/publish: {e}")
         all_ok = False
 
-    if all_ok:
-        remove_image()
-    else:
+    if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
         sys.exit(1)
 
