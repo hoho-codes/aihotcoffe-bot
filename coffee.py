@@ -203,7 +203,7 @@ def main():
     image_url = commit_image()
 
     # Give the CDN a moment to catch up before Pinterest fetches it
-    time.sleep(5)
+    time.sleep(30)
 
     all_ok = True
 
