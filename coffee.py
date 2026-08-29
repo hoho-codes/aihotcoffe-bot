@@ -14,6 +14,11 @@ GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g
 GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "coffee")
 IMAGE_FILENAME = "images/generated_image.png"
 
+TUMBLR_CONSUMER_KEY = os.environ["TUMBLR_CONSUMER_KEY"]
+TUMBLR_CONSUMER_SECRET = os.environ["TUMBLR_CONSUMER_SECRET"]
+TUMBLR_REFRESH_TOKEN = os.environ["TUMBLR_REFRESH_TOKEN"]
+TUMBLR_BLOG_NAME = os.environ["TUMBLR_BLOG_NAME"]
+
 PROMPTS = [
     "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
     "a cappuccino with latte art next to an open book, cozy cafe interior, soft light",
@@ -90,6 +95,39 @@ def remove_image():
 #    )
 #    return res
 
+def refresh_tumblr_token():
+    print("Refreshing Tumblr access token...")
+    res = requests.post(
+        "https://api.tumblr.com/v2/oauth2/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": TUMBLR_REFRESH_TOKEN,
+            "client_id": TUMBLR_CONSUMER_KEY,
+            "client_secret": TUMBLR_CONSUMER_SECRET,
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+    data = res.json()
+    print("Tumblr token refreshed.")
+    return data["access_token"]
+
+
+def publish_to_tumblr(access_token, image_url, caption):
+    print("Publishing to Tumblr...")
+    res = requests.post(
+        f"https://api.tumblr.com/v2/blog/{TUMBLR_BLOG_NAME}/posts",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={
+            "content": [
+                {"type": "image", "media": [{"url": image_url}]},
+                {"type": "text", "text": caption},
+            ],
+            "tags": "coffee,cafe,coffeetime",
+        },
+        timeout=30,
+    )
+    return res
 
 def main():
     prompt = generate_image()
@@ -98,16 +136,34 @@ def main():
     # Give the CDN a moment to catch up before Pinterest fetches it
     time.sleep(5)
 
-#    res = publish_to_pinterest(image_url, prompt)
-#
-#    if res.status_code == 201:
-#        print("Pin published successfully:", res.json())
-#        remove_image()
-#    else:
-#        print(f"Pinterest publish failed ({res.status_code}): {res.text}")
-#        print("Leaving image in repo for debugging — remove manually if needed.")
-#        sys.exit(1)
+    all_ok = True
 
+    # --- Pinterest ---
+ #   pin_res = publish_to_pinterest(image_url, prompt)
+ #   if pin_res.status_code == 201:
+ #       print("Pinterest: published successfully:", pin_res.json())
+ #   else:
+ #       print(f"Pinterest: publish failed ({pin_res.status_code}): {pin_res.text}")
+ #       all_ok = False
+
+    # --- Tumblr ---
+    try:
+        tumblr_access_token = refresh_tumblr_token()
+        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"Coffee time ☕ {prompt}")
+        if tumblr_res.status_code in (200, 201):
+            print("Tumblr: published successfully:", tumblr_res.json())
+        else:
+            print(f"Tumblr: publish failed ({tumblr_res.status_code}): {tumblr_res.text}")
+            all_ok = False
+    except Exception as e:
+        print(f"Tumblr: error during refresh/publish: {e}")
+        all_ok = False
+
+    if all_ok:
+        remove_image()
+    else:
+        print("At least one platform failed — leaving image in repo for debugging.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
