@@ -20,7 +20,7 @@ TUMBLR_CONSUMER_SECRET = os.environ["TUMBLR_CONSUMER_SECRET"]
 TUMBLR_REFRESH_TOKEN = os.environ["TUMBLR_REFRESH_TOKEN"]
 TUMBLR_BLOG_NAME = os.environ["TUMBLR_BLOG_NAME"]
 
-BSKY_HANDLE = os.environ["BSKY_HANDLE"]          # e.g. "aihotcoffee.bsky.social"
+BSKY_HANDLE = os.environ["BSKY_HANDLE"]
 BSKY_APP_PASSWORD = os.environ["BSKY_APP_PASSWORD"]
 
 GH_PAT = os.environ["GH_PAT"]  # Personal Access Token with repo scope, for updating secrets
