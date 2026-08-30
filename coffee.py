@@ -7,7 +7,6 @@ from huggingface_hub import InferenceClient
 import requests
 from nacl import encoding, public
 from datetime import datetime, timezone
-import tempfile
 
 # --- Config from environment/secrets ---
 HF_TOKEN = os.environ["HF_TOKEN"]
@@ -19,7 +18,8 @@ CLIP_DURATION_SECONDS = int(os.environ.get("CLIP_DURATION_SECONDS", "5"))
 #BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g. "user/repo"
 GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "coffee")
-IMAGE_FILENAME = "images/generated_image.png"
+IMAGE_FILENAME = "assets/generated_image.png"
+VIDEO_FILENAME = "assets/generated_video.mp4"
 
 TUMBLR_CONSUMER_KEY = os.environ["TUMBLR_CONSUMER_KEY"]
 TUMBLR_CONSUMER_SECRET = os.environ["TUMBLR_CONSUMER_SECRET"]
@@ -128,6 +128,12 @@ def remove_image():
     print("Removing image from repo...")
     git_run("rm", IMAGE_FILENAME)
     git_run("commit", "-m", "Remove published image")
+    git_run("push")
+
+def remove_video():
+    print("Removing video from repo...")
+    git_run("rm", VIDEO_FILENAME)
+    git_run("commit", "-m", "Remove published video")
     git_run("push")
 
 # ---------- GitHub secret update ----------
@@ -479,31 +485,45 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
 # before that image gets deleted from the repo.
 # ---------------------------------------------------------------------------
 def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, all_ok):
-    with tempfile.TemporaryDirectory() as tmp:
-        raw_path = os.path.join(tmp, "raw.mp4")
-        vertical_path = os.path.join(tmp, "short.mp4")
+    raw_path = "assets/raw_video_temp.mp4"  # intermediate only, not committed
+    vertical_path = VIDEO_FILENAME
 
+    try:
+        generate_video_from_image(image_path, motion_prompt, raw_path)
+        to_vertical_short(raw_path, vertical_path)
+        print("Used AI-generated motion clip.")
+    except Exception as e:
+        print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
         try:
-            generate_video_from_image(image_path, motion_prompt, raw_path)
-            to_vertical_short(raw_path, vertical_path)
-            print("Used AI-generated motion clip.")
-        except Exception as e:
-            print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
-            try:
-                image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
-            except Exception as fallback_err:
-                print(f"Fallback clip generation also failed: {fallback_err}")
-                return False  # nothing to upload, bail out of this step
-
-        title = caption[:95] + " #Shorts"
-        res = publish_to_youtube(vertical_path, title, caption)
-
-        if res is not None and res.ok:
-            print(f"Uploaded Short: {res.json().get('id')}")
-            return all_ok
-        else:
-            print("YouTube Short upload failed; see error above.")
+            image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+        except Exception as fallback_err:
+            print(f"Fallback clip generation also failed: {fallback_err}")
             return False
+
+    # Clean up the intermediate raw file if it exists (AI path only)
+    if os.path.exists(raw_path):
+        os.remove(raw_path)
+
+    # Commit the final video to the repo, same pattern as the image
+    print("Committing video to repo...")
+    git_run("add", vertical_path)
+    commit_result = git_run("commit", "-m", "Daily coffee video")
+    if commit_result.returncode == 0:
+        push_result = git_run("push")
+        if push_result.returncode != 0:
+            print("Video push failed — continuing anyway, upload uses local file.")
+    else:
+        print("Nothing to commit for video (may already match), continuing.")
+
+    title = caption[:95] + " #Shorts"
+    res = publish_to_youtube(vertical_path, title, caption)
+
+    if res is not None and res.ok:
+        print(f"Uploaded Short: {res.json().get('id')}")
+        return all_ok
+    else:
+        print("YouTube Short upload failed; see error above.")
+        return False
 
 def main():
     prompt = generate_image()
