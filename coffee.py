@@ -38,7 +38,7 @@ YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
 YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
 YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
 
-PROMPTS = [
+FALLBACK_PROMPTS = [
     "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
     "a cappuccino with latte art next to an open book, cozy cafe interior, soft light",
     "an iced coffee on a marble table, city cafe window in background, bright daylight",
@@ -50,28 +50,37 @@ PROMPTS = [
 def generate_prompt():
     print("Generating prompt with AI...")
     client = InferenceClient(token=HF_TOKEN)
-    
+
     system_instruction = (
         "You are a creative assistant that writes short, vivid prompts for an "
         "AI image generator. Each prompt must be a single coffee/cafe themed "
         "scene, under 25 words, describing lighting, setting, and mood. "
-        "Must include a coffee cup/glass in the image. Do not repeat common phrasing. "
+        "Must include a coffee cup or glass prominently in the image. Do not repeat common phrasing. "
         "Return ONLY the prompt text, nothing else."
     )
-    
-    response = client.chat_completion(
-        messages=[
-            {"role": "system", "content": system_instruction},
-            {"role": "user", "content": "Generate one new coffee-themed image prompt."},
-        ],
-        model="meta-llama/Llama-3.1-8B-Instruct",  # or another instruct model available on HF Inference
-        max_tokens=60,
-        temperature=1.0,
-    )
-    
-    prompt = response.choices[0].message.content.strip().strip('"')
-    print(f"Generated prompt: {prompt}")
-    return prompt
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            response = client.chat_completion(
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": "Generate one new coffee-themed image prompt."},
+                ],
+                model="meta-llama/Llama-3.1-8B-Instruct",
+                max_tokens=60,
+                temperature=1.0,
+            )
+            prompt = response.choices[0].message.content.strip().strip('"')
+            print(f"Generated prompt: {prompt}")
+            return prompt
+        except Exception as e:
+            last_err = e
+            print(f"generate_prompt attempt {attempt + 1} failed ({e}); retrying...")
+            time.sleep(5)
+
+    print(f"AI prompt generation failed after retries ({last_err}); using fallback prompt.")
+    return random.choice(FALLBACK_PROMPTS)
 
 def generate_image():
     print("Generating image...")
