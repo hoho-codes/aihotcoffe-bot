@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Ensure ffmpeg is present
+        run: ffmpeg -version || sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install dependencies
         run: pip install huggingface_hub requests Pillow pynacl
 
@@ -37,4 +40,10 @@ jobs:
           TUMBLR_BLOG_NAME: ${{ secrets.TUMBLR_BLOG_NAME }}
           BSKY_HANDLE: ${{ secrets.BSKY_HANDLE }}
           BSKY_APP_PASSWORD: ${{ secrets.BSKY_APP_PASSWORD }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          # keep this at "unlisted" until your Google Cloud project has
+          # passed the audit; flip to "public" only after that clears
+          YT_PRIVACY_STATUS: ${{ vars.YT_PRIVACY_STATUS }}
           GH_PAT: ${{ secrets.GH_PAT }}
