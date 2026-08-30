@@ -440,7 +440,30 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
     except Exception as e:
         print(f"YouTube error: {e}")
         return None
- 
+
+def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> str:
+    """
+    Fallback motion generator: fake a Ken Burns pan/zoom via ffmpeg instead
+    of calling a paid/rate-limited AI video model. Free, deterministic,
+    no external API calls or queues -- used when generate_video_from_image
+    fails for any reason.
+    """
+    duration = duration or CLIP_DURATION_SECONDS
+    fps = 30
+    total_frames = duration * fps
+    cmd = [
+        "ffmpeg", "-y", "-loop", "1", "-i", image_path,
+        "-vf",
+        f"scale=1080:1920:force_original_aspect_ratio=increase,"
+        f"crop=1080:1920,"
+        f"zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps}",
+        "-t", str(duration),
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        output_path,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    print(f"Fallback motion clip created at {output_path}")
+    return output_path
  
 # ---------------------------------------------------------------------------
 # Glue -- call this with the same image_path and caption your existing
@@ -451,20 +474,28 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     with tempfile.TemporaryDirectory() as tmp:
         raw_path = os.path.join(tmp, "raw.mp4")
         vertical_path = os.path.join(tmp, "short.mp4")
- 
-        generate_video_from_image(image_path, motion_prompt, raw_path)
-        to_vertical_short(raw_path, vertical_path)
- 
+
+        try:
+            generate_video_from_image(image_path, motion_prompt, raw_path)
+            to_vertical_short(raw_path, vertical_path)
+            print("Used AI-generated motion clip.")
+        except Exception as e:
+            print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
+            try:
+                image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+            except Exception as fallback_err:
+                print(f"Fallback clip generation also failed: {fallback_err}")
+                return False  # nothing to upload, bail out of this step
+
         title = caption[:95] + " #Shorts"
         res = publish_to_youtube(vertical_path, title, caption)
- 
+
         if res is not None and res.ok:
             print(f"Uploaded Short: {res.json().get('id')}")
             return all_ok
         else:
             print("YouTube Short upload failed; see error above.")
-            all_ok = False
-            return all_ok
+            return False
 
 def main():
     prompt = generate_image()
