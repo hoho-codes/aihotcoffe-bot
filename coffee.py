@@ -492,7 +492,7 @@ def main():
 
     # --- Tumblr ---
     try:
-        tumblr_access_token = refresh_tumblr_token()
+        tumblr_access_token = refresh_tumblr_token()o
         tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"Coffee time ☕ \n\n{prompt}")
         if tumblr_res.status_code in (200, 201):
             print("Tumblr: published successfully:", tumblr_res.json())
@@ -504,7 +504,7 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    run_youtube_short_step(IMAGE_FILENAME, motion_prompt, "Morning latte ritual ☕")
+    run_youtube_short_step(IMAGE_FILENAME, motion_prompt, "Morning latte ritual ☕",all_ok)
 
     if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
