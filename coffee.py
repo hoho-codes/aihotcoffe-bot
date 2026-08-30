@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 
 # --- Config from environment/secrets ---
 HF_TOKEN = os.environ["HF_TOKEN"]
+HF_VIDEO_MODEL = os.environ.get("HF_VIDEO_MODEL", "stabilityai/stable-video-diffusion-img2vid-xt")
+HF_VIDEO_PROVIDER = os.environ.get("HF_VIDEO_PROVIDER", "hf-inference")
+# Kept short on purpose: shorter clips are cheaper/faster per generation
+CLIP_DURATION_SECONDS = int(os.environ.get("CLIP_DURATION_SECONDS", "5"))
 #PINTEREST_TOKEN = os.environ["PINTEREST_TOKEN"]
 #BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g. "user/repo"
@@ -27,6 +31,11 @@ BSKY_APP_PASSWORD = os.environ["BSKY_APP_PASSWORD"]
 GH_PAT = os.environ["GH_PAT"]  # Personal Access Token with repo scope, for updating secrets
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]
 GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "main")
+
+YT_CLIENT_ID = os.environ["YT_CLIENT_ID"]
+YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
+YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
+YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
 
 PROMPTS = [
     "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
@@ -265,6 +274,197 @@ def publish_to_bluesky(image_path, caption):
         print(f"Bluesky error: {e}")
         return None
 
+# ----- YouTube --------
+
+def generate_video_from_image(image_path: str, motion_prompt: str, out_path: str) -> str:
+    """
+    Animate the already-generated FLUX coffee image into a short clip
+    and write raw bytes to out_path. Uses huggingface_hub's
+    image_to_video, which is the image-conditioned counterpart to the
+    text_to_video call and reuses the same HF_TOKEN.
+ 
+    `motion_prompt` should describe the *motion* to add (steam rising,
+    slow push-in, light flicker) -- the model keeps the input image's
+    subject and composition, it isn't regenerating the scene from text.
+    Ignored entirely by SVD, which doesn't take a text prompt -- kept as
+    a param so this drops in cleanly if you switch to a prompt-aware
+    model like Wan2.2-I2V later.
+ 
+    On the free hf-inference tier the model may need to "wake up" and
+    return 503 while it loads into the shared queue; retry a few times
+    with a short backoff rather than treating that as a hard failure.
+    """
+    import time
+    from huggingface_hub import InferenceClient
+    from huggingface_hub.errors import HfHubHTTPError
+ 
+    client = InferenceClient(provider=HF_VIDEO_PROVIDER, api_key=HF_TOKEN)
+ 
+    with open(image_path, "rb") as f:
+        input_image = f.read()
+ 
+    kwargs = {"model": HF_VIDEO_MODEL}
+    if HF_VIDEO_PROVIDER != "hf-inference":
+        # SVD ignores prompt/duration; only pass these to prompt-aware,
+        # duration-aware routed models like Wan2.2-I2V.
+        kwargs["prompt"] = motion_prompt
+        kwargs["duration"] = CLIP_DURATION_SECONDS
+ 
+    last_err = None
+    for attempt in range(5):
+        try:
+            video_bytes = client.image_to_video(input_image, **kwargs)
+            with open(out_path, "wb") as f:
+                f.write(video_bytes)
+            return out_path
+        except HfHubHTTPError as e:
+            last_err = e
+            print(f"image_to_video attempt {attempt + 1} failed ({e}); retrying...")
+            time.sleep(15)
+    raise last_err
+ 
+ 
+def to_vertical_short(input_path: str, output_path: str) -> str:
+    """
+    Force the clip into YouTube Shorts' required shape: 1080x1920 (9:16),
+    H.264 + AAC, exactly CLIP_DURATION_SECONDS long.
+ 
+    Most open video models generate landscape or square by default, so
+    this pads to vertical with a blurred background copy rather than
+    cropping out the subject. SVD's free-tier output also tends to run
+    shorter than CLIP_DURATION_SECONDS (fixed ~25 frames), so rather than
+    just padding with a frozen last frame, this slows playback (tpad
+    only clones the last frame; setpts stretches evenly) to fill the
+    target length smoothly. Requires ffmpeg, which ubuntu-latest ships
+    with already.
+    """
+    filter_complex = (
+        "[0:v]scale=1080:-2,boxblur=20:5[bg];"
+        "[0:v]scale=1080:-2[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2,"
+        "crop=1080:1920:(iw-1080)/2:(ih-1920)/2,"
+        f"tpad=stop_mode=clone:stop_duration={CLIP_DURATION_SECONDS}"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-filter_complex", filter_complex,
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k",
+        "-t", str(CLIP_DURATION_SECONDS),  # hard cap in case source ran long
+        output_path,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return output_path
+ 
+ 
+# ---------------------------------------------------------------------------
+# 2. YouTube upload (OAuth2 refresh token, resumable upload)
+# ---------------------------------------------------------------------------
+def yt_refresh_access_token() -> str:
+    """
+    Exchange the long-lived refresh token for a fresh ~1hr access token.
+    Unlike Tumblr, YouTube/Google does NOT rotate the refresh token on
+    each use once your OAuth consent screen is in "Production" status --
+    the same refresh token keeps working indefinitely (until unused for
+    6 months, revoked, or your client secret is rotated). Store it once
+    as a repo secret and forget about it.
+ 
+    If your consent screen is still in "Testing" status, Google expires
+    refresh tokens after 7 days regardless of use -- that will silently
+    break an unattended daily cron, so this is worth resolving (submit
+    for verification / publish to production) before relying on this.
+    """
+    res = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "client_id": YT_CLIENT_ID,
+            "client_secret": YT_CLIENT_SECRET,
+            "refresh_token": YT_REFRESH_TOKEN,
+            "grant_type": "refresh_token",
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+    return res.json()["access_token"]
+ 
+ 
+def publish_to_youtube(video_path: str, title: str, description: str, tags=None):
+    """
+    Upload a vertical clip as a YouTube Short via videos.insert.
+    Uses the resumable upload protocol directly over requests to stay
+    consistent with the rest of your pipeline (no extra google-api-
+    python-client dependency), in two steps: initiate, then upload bytes.
+    """
+    try:
+        access_token = yt_refresh_access_token()
+ 
+        metadata = {
+            "snippet": {
+                "title": title[:100],
+                "description": description,
+                "tags": tags or ["coffee", "cafe", "shorts"],
+                "categoryId": "22",  # People & Blogs
+            },
+            "status": {
+                "privacyStatus": YT_PRIVACY_STATUS,
+                "selfDeclaredMadeForKids": False,
+            },
+        }
+ 
+        init_res = requests.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos"
+            "?uploadType=resumable&part=snippet,status",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-Upload-Content-Type": "video/mp4",
+            },
+            json=metadata,
+            timeout=30,
+        )
+        init_res.raise_for_status()
+        upload_url = init_res.headers["Location"]
+ 
+        with open(video_path, "rb") as f:
+            video_bytes = f.read()
+ 
+        upload_res = requests.put(
+            upload_url,
+            headers={"Content-Type": "video/mp4"},
+            data=video_bytes,
+            timeout=180,
+        )
+        upload_res.raise_for_status()
+        return upload_res
+    except Exception as e:
+        print(f"YouTube error: {e}")
+        return None
+ 
+ 
+# ---------------------------------------------------------------------------
+# Glue -- call this with the same image_path and caption your existing
+# post_coffee.py already generated and used for Pinterest/Tumblr/Bluesky,
+# before that image gets deleted from the repo.
+# ---------------------------------------------------------------------------
+def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, all_ok):
+    with tempfile.TemporaryDirectory() as tmp:
+        raw_path = os.path.join(tmp, "raw.mp4")
+        vertical_path = os.path.join(tmp, "short.mp4")
+ 
+        generate_video_from_image(image_path, motion_prompt, raw_path)
+        to_vertical_short(raw_path, vertical_path)
+ 
+        title = caption[:95] + " #Shorts"
+        res = publish_to_youtube(vertical_path, title, caption)
+ 
+        if res is not None and res.ok:
+            print(f"Uploaded Short: {res.json().get('id')}")
+            return all_ok
+        else:
+            print("YouTube Short upload failed; see error above.")
+            all_ok = False
+            return all_ok
+
 def main():
     prompt = generate_image()
     image_url = commit_image()
@@ -302,6 +502,9 @@ def main():
     except Exception as e:
         print(f"Tumblr: error during refresh/publish: {e}")
         all_ok = False
+
+    motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
+    run_youtube_short_step(IMAGE_FILENAME, motion_prompt, "Morning latte ritual ☕")
 
     if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
