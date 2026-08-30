@@ -9,6 +9,7 @@ from nacl import encoding, public
 from datetime import datetime, timezone
 
 # --- Config from environment/secrets ---
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 HF_TOKEN = os.environ["HF_TOKEN"]
 HF_VIDEO_MODEL = os.environ.get("HF_VIDEO_MODEL", "stabilityai/stable-video-diffusion-img2vid-xt")
 HF_VIDEO_PROVIDER = os.environ.get("HF_VIDEO_PROVIDER", "hf-inference")
@@ -47,31 +48,48 @@ FALLBACK_PROMPTS = [
     "a coffee cup on an outdoor cafe table, european street in background, golden hour",
 ]
 
-def generate_prompt():
-    print("Generating prompt with AI...")
-    client = InferenceClient(token=HF_TOKEN)
+FALLBACK_PROMPTS = [
+    "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
+    "a cappuccino with latte art next to an open book, cozy cafe interior, soft light",
+    "an iced coffee on a marble table, city cafe window in background, bright daylight",
+    "a pour-over coffee setup on a cafe counter, warm afternoon light, minimalist",
+    "a flat white on a cafe table with a croissant, natural window light",
+    "a coffee cup on an outdoor cafe table, european street in background, golden hour",
+]
 
+
+def generate_prompt():
+    print("Generating prompt with Groq...")
     system_instruction = (
         "You are a creative assistant that writes short, vivid prompts for an "
         "AI image generator. Each prompt must be a single coffee/cafe themed "
         "scene, under 25 words, describing lighting, setting, and mood. "
-        "Must include a coffee cup or glass prominently in the image. Do not repeat common phrasing. "
+        "Must include a coffee cup/glass in the image. Do not repeat common phrasing. "
         "Return ONLY the prompt text, nothing else."
     )
 
     last_err = None
     for attempt in range(3):
         try:
-            response = client.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": "Generate one new coffee-themed image prompt."},
-                ],
-                model="meta-llama/Llama-3.1-8B-Instruct",
-                max_tokens=60,
-                temperature=1.0,
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.1-8b-instant",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": "Generate one new coffee-themed image prompt."},
+                    ],
+                    "max_tokens": 60,
+                    "temperature": 1.0,
+                },
+                timeout=30,
             )
-            prompt = response.choices[0].message.content.strip().strip('"')
+            res.raise_for_status()
+            prompt = res.json()["choices"][0]["message"]["content"].strip().strip('"')
             print(f"Generated prompt: {prompt}")
             return prompt
         except Exception as e:
@@ -79,7 +97,7 @@ def generate_prompt():
             print(f"generate_prompt attempt {attempt + 1} failed ({e}); retrying...")
             time.sleep(5)
 
-    print(f"AI prompt generation failed after retries ({last_err}); using fallback prompt.")
+    print(f"Groq prompt generation failed after retries ({last_err}); using fallback prompt.")
     return random.choice(FALLBACK_PROMPTS)
 
 def generate_image():
