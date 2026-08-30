@@ -399,28 +399,22 @@ def yt_refresh_access_token() -> str:
  
  
 def publish_to_youtube(video_path: str, title: str, description: str, tags=None):
-    """
-    Upload a vertical clip as a YouTube Short via videos.insert.
-    Uses the resumable upload protocol directly over requests to stay
-    consistent with the rest of your pipeline (no extra google-api-
-    python-client dependency), in two steps: initiate, then upload bytes.
-    """
     try:
         access_token = yt_refresh_access_token()
- 
+
         metadata = {
             "snippet": {
                 "title": title[:100],
                 "description": description,
                 "tags": tags or ["coffee", "cafe", "shorts"],
-                "categoryId": "22",  # People & Blogs
+                "categoryId": "22",
             },
             "status": {
                 "privacyStatus": YT_PRIVACY_STATUS,
                 "selfDeclaredMadeForKids": False,
             },
         }
- 
+
         init_res = requests.post(
             "https://www.googleapis.com/upload/youtube/v3/videos"
             "?uploadType=resumable&part=snippet,status",
@@ -432,23 +426,28 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
             json=metadata,
             timeout=30,
         )
+        if not init_res.ok:
+            print(f"YouTube init error body: {init_res.text}")  # <-- add this
         init_res.raise_for_status()
         upload_url = init_res.headers["Location"]
- 
+
         with open(video_path, "rb") as f:
             video_bytes = f.read()
- 
+
         upload_res = requests.put(
             upload_url,
             headers={"Content-Type": "video/mp4"},
             data=video_bytes,
             timeout=180,
         )
+        if not upload_res.ok:
+            print(f"YouTube upload error body: {upload_res.text}")  # <-- and this
         upload_res.raise_for_status()
         return upload_res
     except Exception as e:
         print(f"YouTube error: {e}")
         return None
+        
 
 def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> str:
     """
