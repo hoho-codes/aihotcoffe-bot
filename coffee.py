@@ -78,18 +78,19 @@ def generate_prompt():
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "openai/gpt-oss-120b",
+                    "model": "openai/gpt-oss-20b",
                     "messages": [
                         {"role": "system", "content": system_instruction},
                         {"role": "user", "content": "Generate one new coffee-themed image prompt."},
                     ],
-                    "max_tokens": 60,
+                    "max_tokens": 300,
                     "temperature": 1.0,
+                    "reasoning_effort": "low",  # minimizes reasoning tokens, leaves more room for output
                 },
-                timeout=30,
             )
-            res.raise_for_status()
             prompt = res.json()["choices"][0]["message"]["content"].strip().strip('"')
+            if not prompt:
+                raise ValueError("Groq returned an empty prompt")
             print(f"Generated prompt: {prompt}")
             return prompt
         except Exception as e:
