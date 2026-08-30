@@ -7,6 +7,7 @@ from huggingface_hub import InferenceClient
 import requests
 from nacl import encoding, public
 from datetime import datetime, timezone
+import tempfile
 
 # --- Config from environment/secrets ---
 HF_TOKEN = os.environ["HF_TOKEN"]
