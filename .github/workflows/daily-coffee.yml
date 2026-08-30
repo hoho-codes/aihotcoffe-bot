@@ -45,5 +45,5 @@ jobs:
           YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
           # keep this at "unlisted" until your Google Cloud project has
           # passed the audit; flip to "public" only after that clears
-          YT_PRIVACY_STATUS: ${{ vars.YT_PRIVACY_STATUS }}
+          YT_PRIVACY_STATUS: ${{ secrets.YT_PRIVACY_STATUS }}
           GH_PAT: ${{ secrets.GH_PAT }}
