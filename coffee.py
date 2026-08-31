@@ -168,18 +168,12 @@ def depth_parallax_clip(
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
-    margin: int = 90,
+    margin: int = 140,
     max_shift_px: float = 70.0,
 ) -> str:
-    """
-    Generates a 2.5D parallax "camera push" from a single still image using
-    a MiDaS depth map -- runs entirely locally on CPU, so it doesn't share
-    the hf-inference 503/wake-up flakiness that generate_video_from_image()
-    hits on the free tier.
-    """
     canvas = prepare_canvas(image_path, out_w, out_h, margin)
     canvas_h, canvas_w = canvas.shape[:2]
-    depth = estimate_depth(Image.fromarray(canvas))  # aligned to canvas, not the raw source
+    depth = estimate_depth(Image.fromarray(canvas))
 
     grid_x, grid_y = np.meshgrid(
         np.arange(canvas_w, dtype=np.float32),
@@ -192,16 +186,18 @@ def depth_parallax_clip(
 
     crop_x0, crop_y0 = margin, margin
 
+    # Scale max_shift_px by duration so push *speed* (px/sec) stays
+    # constant -- a 10s clip travels twice as far as a 5s clip, at the
+    # same rate, rather than covering the same distance more slowly.
+    baseline_duration = 5  # the 70px default was tuned for a 5s clip
+    effective_max_shift = max_shift_px * (duration / baseline_duration)
+    effective_max_shift = min(effective_max_shift, margin)  # never exceed available margin
+
     for i in range(total_frames):
         t = i / max(total_frames - 1, 1)
-        # ease-in-ease-out push rather than a linear pan -- reads as a
-        # deliberate camera move instead of a slide
         eased_t = 0.5 - 0.5 * np.cos(np.pi * t)
-        shift = max_shift_px * eased_t
+        shift = effective_max_shift * eased_t
 
-        # closer pixels (depth near 1) move more than the background --
-        # that differential is what reads as "3D" rather than a flat pan.
-        # small vertical component too, for a subtle diagonal drift
         map_x = grid_x - shift * depth
         map_y = grid_y - (shift * 0.25) * depth
         map_x = map_x.astype(np.float32)
@@ -217,9 +213,6 @@ def depth_parallax_clip(
 
     writer.release()
 
-    # mp4v from OpenCV isn't reliably playable everywhere -- re-encode to
-    # h264/yuv420p the same way the rest of the pipeline does, with the
-    # same fade treatment as build_filter() for a consistent look
     fade_out_start = max(duration - 1, 0)
     cmd = [
         "ffmpeg", "-y", "-i", raw_path,
@@ -232,7 +225,7 @@ def depth_parallax_clip(
     os.remove(raw_path)
 
     print(f"Depth parallax clip created at {output_path}")
-    return output_path    
+    return output_path
     
 
 def log_post(prompt, subject, style, caption_intro, platform_results, video_effect=None, music_track=None):
@@ -737,15 +730,34 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
 
 def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
     total_frames = duration * fps
+
+    # Rates below are calibrated for a 5s baseline clip. Dividing each
+    # target total-motion amount by total_frames keeps the perceived
+    # speed constant regardless of duration -- a 10s clip reaches the
+    # same zoom/pan amount at the same wall-clock rate, just holds it
+    # longer, rather than ending up more zoomed/panned than a 5s clip.
+    baseline_frames = 5 * fps  # the rates below were tuned at 5s/150 frames
+
+    zoom_increment = 0.0007 * (baseline_frames / total_frames)
+    pan_speed = 40  # px/sec, already duration-independent (uses t, not on)
+    diagonal_zoom_increment = 0.0005 * (baseline_frames / total_frames)
+    diagonal_pan_speed = 10  # already per-second via t
+    breathing_cycle_frames = 10  # oscillation period in frames -- keep this
+                                  # fixed so the "breathing" rate (cycles per
+                                  # second) stays the same regardless of duration
+    vignette_zoom_increment = 0.0007 * (baseline_frames / total_frames)
+    color_drift_increment = 0.0006 * (baseline_frames / total_frames)
+    grain_zoom_increment = 0.0007 * (baseline_frames / total_frames)
+
     filters = {
-        "zoompan_in": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps}",
-        "zoompan_out": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-0.0007))':d={total_frames}:s=1080x1920:fps={fps}",
-        "pan_horizontal": f"scale=1600:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='min(t*40,iw-1080)':y=0",
-        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0005,1.2)':x='iw/2-(iw/zoom/2)+t*10':y='ih/2-(ih/zoom/2)+t*5':d={total_frames}:s=1080x1920:fps={fps}",
-        "breathing_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='1.1+0.05*sin(on/10)':d={total_frames}:s=1080x1920:fps={fps}",
-        "vignette_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps},vignette=PI/4",
-        "color_drift": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.1,zoompan=z='min(zoom+0.0006,1.25)':d={total_frames}:s=1080x1920:fps={fps}",
-        "grain_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps},noise=alls=8:allf=t+u",
+        "zoompan_in": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps}",
+        "zoompan_out": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-{zoom_increment}))':d={total_frames}:s=1080x1920:fps={fps}",
+        "pan_horizontal": f"scale=1600:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='min(t*{pan_speed},iw-1080)':y=0",
+        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{diagonal_zoom_increment},1.2)':x='iw/2-(iw/zoom/2)+t*{diagonal_pan_speed}':y='ih/2-(ih/zoom/2)+t*{diagonal_pan_speed/2}':d={total_frames}:s=1080x1920:fps={fps}",
+        "breathing_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='1.1+0.05*sin(on/{breathing_cycle_frames})':d={total_frames}:s=1080x1920:fps={fps}",
+        "vignette_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{vignette_zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps},vignette=PI/4",
+        "color_drift": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.1,zoompan=z='min(zoom+{color_drift_increment},1.25)':d={total_frames}:s=1080x1920:fps={fps}",
+        "grain_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{grain_zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps},noise=alls=8:allf=t+u",
     }
     base = filters.get(effect_name, filters["zoompan_in"])
     fade_out_start = max(duration - 1, 0)
