@@ -56,15 +56,20 @@ FALLBACK_PROMPTS = [
     "a coffee cup on an outdoor cafe table, european street in background, golden hour",
 ]
 
-EFFECTS = [
-    "zoompan_in",
-    "zoompan_out",
-    "pan_horizontal",
-    "diagonal_zoom",
-    "breathing_zoom",
-    "vignette_zoom",
-    "color_drift",
-    "grain_zoom",
+# Weighted effect pool: depth_parallax is the most visually sophisticated
+# effect, so it gets picked more often, but the ffmpeg-only effects still
+# rotate in regularly for variety and as a natural fallback if depth
+# estimation ever misbehaves.
+EFFECTS_WEIGHTED = [
+    ("depth_parallax", 40),
+    ("zoompan_in", 10),
+    ("zoompan_out", 8),
+    ("pan_horizontal", 8),
+    ("diagonal_zoom", 8),
+    ("breathing_zoom", 8),
+    ("vignette_zoom", 8),
+    ("color_drift", 5),
+    ("grain_zoom", 5),
 ]
 
 # --- Content variety pools ---
@@ -750,17 +755,18 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
 def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> tuple:
     duration = duration or CLIP_DURATION_SECONDS
 
-    # try the depth parallax path first; fall back to the existing ffmpeg
-    # zoompan effects if the model isn't available or fails for any reason
-    # (first-run download timeout, OOM on a small runner, etc.)
-    try:
-        depth_parallax_clip(image_path, output_path, duration=duration)
-        return output_path, "depth_parallax"
-    except Exception as e:
-        print(f"Depth parallax failed ({e}); falling back to ffmpeg zoompan.")
+    effect = weighted_choice(EFFECTS_WEIGHTED)
+    print(f"Selected effect: {effect}")
+
+    if effect == "depth_parallax":
+        try:
+            depth_parallax_clip(image_path, output_path, duration=duration)
+            return output_path, "depth_parallax"
+        except Exception as e:
+            print(f"Depth parallax failed ({e}); falling back to a zoompan effect instead.")
+            effect = random.choice([e for e, _ in EFFECTS_WEIGHTED if e != "depth_parallax"])
 
     fps = 30
-    effect = random.choice(EFFECTS)
     print(f"Using effect: {effect}")
     vf = build_filter(effect, duration, fps)
 
