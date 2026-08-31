@@ -110,11 +110,8 @@ def generate_image():
     
 
 def add_background_music(video_path: str, output_path: str, duration: int) -> str:
-    """
-    Overlay a randomly chosen royalty-free track under the video,
-    trimmed to match the clip's duration, with a short fade-out.
-    """
     music_files = glob.glob("assets/music/*.mp3")
+    print(f"Found {len(music_files)} music file(s) in assets/music/")
     if not music_files:
         print("No music files found — skipping audio overlay.")
         return video_path
@@ -122,7 +119,7 @@ def add_background_music(video_path: str, output_path: str, duration: int) -> st
     music_path = random.choice(music_files)
     print(f"Adding background music: {music_path}")
 
-    fade_start = max(duration - 1, 0)  # fade out in the last second
+    fade_start = max(duration - 1, 0)
 
     cmd = [
         "ffmpeg", "-y",
@@ -137,9 +134,11 @@ def add_background_music(video_path: str, output_path: str, duration: int) -> st
         "-shortest",
         output_path,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg audio overlay failed:\n{result.stderr}")
+        raise RuntimeError("ffmpeg audio overlay failed")
     return output_path
-
 def git_run(*args):
     result = subprocess.run(["git"] + list(args), capture_output=True, text=True)
     if result.returncode != 0:
