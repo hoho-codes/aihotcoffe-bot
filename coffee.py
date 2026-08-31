@@ -61,15 +61,15 @@ FALLBACK_PROMPTS = [
 # rotate in regularly for variety and as a natural fallback if depth
 # estimation ever misbehaves.
 EFFECTS_WEIGHTED = [
-    ("depth_parallax", 40),
-    ("zoompan_in", 10),
-    ("zoompan_out", 8),
-    ("pan_horizontal", 8),
-    ("diagonal_zoom", 8),
-    ("breathing_zoom", 8),
-    ("vignette_zoom", 8),
-    ("color_drift", 5),
-    ("grain_zoom", 5),
+    ("depth_parallax", 20),
+    ("zoompan_in", 12),
+    ("zoompan_out", 10),
+    ("pan_horizontal", 10),
+    ("diagonal_zoom", 10),
+    ("breathing_zoom", 10),
+    ("vignette_zoom", 10),
+    ("color_drift", 9),
+    ("grain_zoom", 9),
 ]
 
 # --- Content variety pools ---
