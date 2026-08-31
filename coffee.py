@@ -49,6 +49,16 @@ FALLBACK_PROMPTS = [
     "a coffee cup on an outdoor cafe table, european street in background, golden hour",
 ]
 
+EFFECTS = [
+    "zoompan_in",
+    "zoompan_out",
+    "pan_horizontal",
+    "diagonal_zoom",
+    "breathing_zoom",
+    "vignette_zoom",
+    "color_drift",
+    "grain_zoom",
+]
 
 def generate_prompt():
     print("Generating prompt with Groq...")
@@ -496,30 +506,40 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
         return None
         
 
+def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
+    total_frames = duration * fps
+    filters = {
+        "zoompan_in": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps}",
+        "zoompan_out": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-0.0007))':d={total_frames}:s=1080x1920:fps={fps}",
+        "pan_horizontal": f"scale=1600:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='min(t*40,iw-1080)':y=0",
+        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0005,1.2)':x='iw/2-(iw/zoom/2)+t*10':y='ih/2-(ih/zoom/2)+t*5':d={total_frames}:s=1080x1920:fps={fps}",
+        "breathing_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='1.1+0.05*sin(on/10)':d={total_frames}:s=1080x1920:fps={fps}",
+        "vignette_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps},vignette=PI/4",
+        "color_drift": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.1,zoompan=z='min(zoom+0.0006,1.25)':d={total_frames}:s=1080x1920:fps={fps}",
+        "grain_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps},noise=alls=8:allf=t+u",
+    }
+    base = filters.get(effect_name, filters["zoompan_in"])
+    fade_out_start = max(duration - 1, 0)
+    return f"{base},fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start}:d=0.5"
+
+
 def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> str:
-    """
-    Fallback motion generator: fake a Ken Burns pan/zoom via ffmpeg instead
-    of calling a paid/rate-limited AI video model. Free, deterministic,
-    no external API calls or queues -- used when generate_video_from_image
-    fails for any reason.
-    """
     duration = duration or CLIP_DURATION_SECONDS
     fps = 30
-    total_frames = duration * fps
+    effect = random.choice(EFFECTS)
+    print(f"Using effect: {effect}")
+    vf = build_filter(effect, duration, fps)
+
     cmd = [
         "ffmpeg", "-y", "-loop", "1", "-i", image_path,
-        "-vf",
-        f"scale=1080:1920:force_original_aspect_ratio=increase,"
-        f"crop=1080:1920,"
-        f"zoompan=z='min(zoom+0.0007,1.3)':d={total_frames}:s=1080x1920:fps={fps}",
+        "-vf", vf,
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
         output_path,
     ]
     subprocess.run(cmd, check=True, capture_output=True)
-    print(f"Fallback motion clip created at {output_path}")
-    return output_path
- 
+    print(f"Fallback motion clip created at {output_path} using '{effect}'")
+    return output_path 
 # ---------------------------------------------------------------------------
 # Glue -- call this with the same image_path and caption your existing
 # post_coffee.py already generated and used for Pinterest/Tumblr/Bluesky,
