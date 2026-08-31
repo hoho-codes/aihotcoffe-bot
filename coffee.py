@@ -22,7 +22,7 @@ HF_TOKEN = os.environ["HF_TOKEN"]
 HF_VIDEO_MODEL = os.environ.get("HF_VIDEO_MODEL", "stabilityai/stable-video-diffusion-img2vid-xt")
 HF_VIDEO_PROVIDER = os.environ.get("HF_VIDEO_PROVIDER", "hf-inference")
 # Kept short on purpose: shorter clips are cheaper/faster per generation
-CLIP_DURATION_SECONDS = int(os.environ.get("CLIP_DURATION_SECONDS", "5"))
+CLIP_DURATION_SECONDS = int(os.environ.get("CLIP_DURATION_SECONDS", "10"))
 #PINTEREST_TOKEN = os.environ["PINTEREST_TOKEN"]
 #BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
 GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g. "user/repo"
