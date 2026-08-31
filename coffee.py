@@ -60,14 +60,53 @@ EFFECTS = [
     "grain_zoom",
 ]
 
+# --- Content variety pools ---
+
+STYLE_MODIFIERS = [
+    "warm film photography style",
+    "soft watercolor illustration style",
+    "moody noir black and white style",
+    "minimalist line art style",
+    "vintage polaroid aesthetic",
+    "cinematic golden-hour photography",
+    "cozy hand-drawn illustration style",
+    "high-contrast editorial photography",
+]
+
+SUBJECT_VARIANTS = [
+    "a steaming cup of coffee",
+    "a rustic bag of whole coffee beans",
+    "a charming cafe exterior with an outdoor table",
+    "a barista's hands pouring latte art",
+    "a coffee cup next to an open journal",
+    "a French press and cup on a windowsill",
+    "an espresso machine with a fresh shot pulling",
+    "a coffee cup with steam rising, seen from above",
+]
+
+CAPTION_INTROS = [
+    "Coffee time ☕",
+    "Morning fuel ☕",
+    "A little cafe moment ☕",
+    "Brewed just for you ☕",
+    "Slow morning vibes ☕",
+    "Cafe daydreaming ☕",
+    "Warm cup, warm thoughts ☕",
+    "Today's coffee ritual ☕",
+]
+
 def generate_prompt():
     print("Generating prompt with Groq...")
+
+    style = random.choice(STYLE_MODIFIERS)
+    subject = random.choice(SUBJECT_VARIANTS)
+
     system_instruction = (
         "You are a creative assistant that writes short, vivid prompts for an "
-        "AI image generator. Each prompt must be a single coffee/cafe themed "
-        "scene, under 25 words, describing lighting, setting, and mood. "
-        "Must include a coffee cup/glass in the image. Do not repeat common phrasing. "
-        "Return ONLY the prompt text, nothing else."
+        "AI image generator. Each prompt must feature this subject: "
+        f"{subject}. Render it in this style: {style}. "
+        "Describe lighting, setting, and mood, under 25 words total. "
+        "Do not repeat common phrasing. Return ONLY the prompt text, nothing else."
     )
 
     last_err = None
@@ -87,7 +126,7 @@ def generate_prompt():
                     ],
                     "max_tokens": 300,
                     "temperature": 1.0,
-                    "reasoning_effort": "low",  # minimizes reasoning tokens, leaves more room for output
+                    "reasoning_effort": "low",
                 },
             )
             prompt = res.json()["choices"][0]["message"]["content"].strip().strip('"')
@@ -603,13 +642,13 @@ def main():
     prompt = generate_image()
     image_url = commit_image()
 
-    # Give the CDN a moment to catch up before Pinterest fetches it
     time.sleep(30)
 
     all_ok = True
+    caption_intro = random.choice(CAPTION_INTROS)
 
-    # --- Pinterest ---
- #   pin_res = publish_to_pinterest(image_url, prompt)
+        # --- Pinterest ---
+ #   pin_res = publish_to_pinterest(image_url, f"{caption_intro} {prompt}")
  #   if pin_res.status_code == 201:
  #       print("Pinterest: published successfully:", pin_res.json())
  #   else:
@@ -617,7 +656,7 @@ def main():
  #       all_ok = False
 
     # --- Bluesky ---
-    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"Coffee time ☕ {prompt}")
+    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"{caption_intro} {prompt}")
     if bsky_res is not None and bsky_res.status_code == 200:
         print("Bluesky: published successfully:", bsky_res.json())
     else:
@@ -627,7 +666,7 @@ def main():
     # --- Tumblr ---
     try:
         tumblr_access_token = refresh_tumblr_token()
-        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"Coffee time ☕ \n\n{prompt}")
+        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"{caption_intro} \n\n{prompt}")
         if tumblr_res.status_code in (200, 201):
             print("Tumblr: published successfully:", tumblr_res.json())
         else:
@@ -638,7 +677,7 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    all_ok = run_youtube_short_step(IMAGE_FILENAME, motion_prompt, f"Morning latte ritual ☕ #Shorts\n\n{prompt}", all_ok)
+    all_ok = run_youtube_short_step(IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}", all_ok)
 
     if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
