@@ -199,6 +199,8 @@ def depth_parallax_clip(
         # small vertical component too, for a subtle diagonal drift
         map_x = grid_x - shift * depth
         map_y = grid_y - (shift * 0.25) * depth
+        map_x = map_x.astype(np.float32)
+        map_y = map_y.astype(np.float32)
 
         warped = cv2.remap(
             canvas, map_x, map_y,
