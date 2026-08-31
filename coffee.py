@@ -9,6 +9,10 @@ import glob
 from nacl import encoding, public
 from datetime import datetime, timezone
 import json
+import cv2
+import numpy as np
+from PIL import Image
+from transformers import pipeline
 
 LOG_FILENAME = "logs/posts.jsonl"
 
@@ -101,6 +105,130 @@ CAPTION_INTROS = [
     "Today's coffee ritual ☕",
 ]
 
+_DEPTH_PIPE = None
+
+
+def _get_depth_pipe():
+    """Loads the MiDaS depth model once per process. dpt-hybrid-midas is a
+    reasonable speed/quality tradeoff for single-image CPU inference."""
+    global _DEPTH_PIPE
+    if _DEPTH_PIPE is None:
+        _DEPTH_PIPE = pipeline(
+            task="depth-estimation",
+            model="Intel/dpt-hybrid-midas",
+            device=-1,  # CPU -- GH Actions runners have no GPU
+        )
+    return _DEPTH_PIPE
+
+
+def estimate_depth(image: Image.Image) -> np.ndarray:
+	"""
+    Returns a closeness map the same size as `image`, normalized to [0, 1]
+    where 1.0 = closest to camera. MiDaS-family models output inverse
+    depth (disparity), where larger values already mean "closer" -- no
+    inversion needed.
+    """
+    depth_pipe = _get_depth_pipe()
+    result = depth_pipe(image)
+    depth = np.array(result["depth"], dtype=np.float32)
+    if depth.shape != (image.height, image.width):
+        depth = cv2.resize(depth, (image.width, image.height), interpolation=cv2.INTER_LINEAR)
+    depth -= depth.min()
+    max_val = depth.max()
+    if max_val > 0:
+        depth /= max_val
+    return depth
+
+
+def prepare_canvas(image_path: str, out_w: int = 1080, out_h: int = 1920, margin: int = 90) -> np.ndarray:
+    """
+    Fits the source image to a vertical canvas larger than the final frame
+    by `margin` px per side. That margin gives the parallax warp real
+    source pixels to pull from at the edges instead of stretching --
+    keep max_shift_px <= margin.
+    """
+    canvas_w, canvas_h = out_w + 2 * margin, out_h + 2 * margin
+    img = Image.open(image_path).convert("RGB")
+
+    scale = max(canvas_w / img.width, canvas_h / img.height)
+    resized = img.resize((int(img.width * scale) + 1, int(img.height * scale) + 1), Image.LANCZOS)
+    left = (resized.width - canvas_w) // 2
+    top = (resized.height - canvas_h) // 2
+    cropped = resized.crop((left, top, left + canvas_w, top + canvas_h))
+    return np.array(cropped)  # RGB uint8, shape (canvas_h, canvas_w, 3)
+    
+    
+def depth_parallax_clip(
+    image_path: str,
+    output_path: str,
+    duration: int = CLIP_DURATION_SECONDS,
+    fps: int = 30,
+    out_w: int = 1080,
+    out_h: int = 1920,
+    margin: int = 90,
+    max_shift_px: float = 70.0,
+) -> str:
+    """
+    Generates a 2.5D parallax "camera push" from a single still image using
+    a MiDaS depth map -- runs entirely locally on CPU, so it doesn't share
+    the hf-inference 503/wake-up flakiness that generate_video_from_image()
+    hits on the free tier.
+    """
+    canvas = prepare_canvas(image_path, out_w, out_h, margin)
+    canvas_h, canvas_w = canvas.shape[:2]
+    depth = estimate_depth(Image.fromarray(canvas))  # aligned to canvas, not the raw source
+
+    grid_x, grid_y = np.meshgrid(
+        np.arange(canvas_w, dtype=np.float32),
+        np.arange(canvas_h, dtype=np.float32),
+    )
+
+    total_frames = max(int(duration * fps), 1)
+    raw_path = output_path.replace(".mp4", "_raw.mp4")
+    writer = cv2.VideoWriter(raw_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
+
+    crop_x0, crop_y0 = margin, margin
+
+    for i in range(total_frames):
+        t = i / max(total_frames - 1, 1)
+        # ease-in-ease-out push rather than a linear pan -- reads as a
+        # deliberate camera move instead of a slide
+        eased_t = 0.5 - 0.5 * np.cos(np.pi * t)
+        shift = max_shift_px * eased_t
+
+        # closer pixels (depth near 1) move more than the background --
+        # that differential is what reads as "3D" rather than a flat pan.
+        # small vertical component too, for a subtle diagonal drift
+        map_x = grid_x - shift * depth
+        map_y = grid_y - (shift * 0.25) * depth
+
+        warped = cv2.remap(
+            canvas, map_x, map_y,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+        frame = warped[crop_y0:crop_y0 + out_h, crop_x0:crop_x0 + out_w]
+        writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+    writer.release()
+
+    # mp4v from OpenCV isn't reliably playable everywhere -- re-encode to
+    # h264/yuv420p the same way the rest of the pipeline does, with the
+    # same fade treatment as build_filter() for a consistent look
+    fade_out_start = max(duration - 1, 0)
+    cmd = [
+        "ffmpeg", "-y", "-i", raw_path,
+        "-vf", f"fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start}:d=0.5",
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-t", str(duration),
+        output_path,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    os.remove(raw_path)
+
+    print(f"Depth parallax clip created at {output_path}")
+    return output_path    
+    
 
 def log_post(prompt, subject, style, caption_intro, platform_results, video_effect=None, music_track=None):
     """
@@ -621,6 +749,16 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
 
 def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> tuple:
     duration = duration or CLIP_DURATION_SECONDS
+
+    # try the depth parallax path first; fall back to the existing ffmpeg
+    # zoompan effects if the model isn't available or fails for any reason
+    # (first-run download timeout, OOM on a small runner, etc.)
+    try:
+        depth_parallax_clip(image_path, output_path, duration=duration)
+        return output_path, "depth_parallax"
+    except Exception as e:
+        print(f"Depth parallax failed ({e}); falling back to ffmpeg zoompan.")
+
     fps = 30
     effect = random.choice(EFFECTS)
     print(f"Using effect: {effect}")
@@ -662,7 +800,7 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     #         return False, None, None
 
     try:
-            vertical_path, effect_used = image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+        vertical_path, effect_used = image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
     except Exception as fallback_err:
         print(f"Fallback clip generation also failed: {fallback_err}")
         return False, None, None
