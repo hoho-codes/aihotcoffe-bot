@@ -49,15 +49,6 @@ FALLBACK_PROMPTS = [
     "a coffee cup on an outdoor cafe table, european street in background, golden hour",
 ]
 
-FALLBACK_PROMPTS = [
-    "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
-    "a cappuccino with latte art next to an open book, cozy cafe interior, soft light",
-    "an iced coffee on a marble table, city cafe window in background, bright daylight",
-    "a pour-over coffee setup on a cafe counter, warm afternoon light, minimalist",
-    "a flat white on a cafe table with a croissant, natural window light",
-    "a coffee cup on an outdoor cafe table, european street in background, golden hour",
-]
-
 
 def generate_prompt():
     print("Generating prompt with Groq...")
