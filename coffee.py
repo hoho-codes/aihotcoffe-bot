@@ -530,17 +530,23 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     vertical_path = VIDEO_FILENAME
     final_path = "assets/generated_video_with_audio.mp4"
 
+    # try:
+    #     generate_video_from_image(image_path, motion_prompt, raw_path)
+    #     to_vertical_short(raw_path, vertical_path)
+    #     print("Used AI-generated motion clip.")
+    # except Exception as e:
+    #     print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
+    #     try:
+    #         image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+    #     except Exception as fallback_err:
+    #         print(f"Fallback clip generation also failed: {fallback_err}")
+    #         return False
+
     try:
-        generate_video_from_image(image_path, motion_prompt, raw_path)
-        to_vertical_short(raw_path, vertical_path)
-        print("Used AI-generated motion clip.")
-    except Exception as e:
-        print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
-        try:
-            image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
-        except Exception as fallback_err:
-            print(f"Fallback clip generation also failed: {fallback_err}")
-            return False
+        image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+    except Exception as fallback_err:
+        print(f"Fallback clip generation failed: {fallback_err}")
+        return False
 
     if os.path.exists(raw_path):
         os.remove(raw_path)
