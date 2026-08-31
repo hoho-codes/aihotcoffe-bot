@@ -125,12 +125,12 @@ def estimate_depth(image: Image.Image) -> np.ndarray:
 	"""
     Returns a closeness map the same size as `image`, normalized to [0, 1]
     where 1.0 = closest to camera. MiDaS-family models output inverse
-    depth (disparity), where larger values already mean "closer" -- no
+    depth (disparity), where larger values already mean closer -- no
     inversion needed.
     """
     depth_pipe = _get_depth_pipe()
-    result = depth_pipe(image)
-    depth = np.array(result["depth"], dtype=np.float32)
+	result = depth_pipe(image)
+	depth = np.array(result["depth"], dtype=np.float32)
     if depth.shape != (image.height, image.width):
         depth = cv2.resize(depth, (image.width, image.height), interpolation=cv2.INTER_LINEAR)
     depth -= depth.min()
