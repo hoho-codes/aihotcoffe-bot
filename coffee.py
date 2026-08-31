@@ -168,7 +168,7 @@ def depth_parallax_clip(
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
-    margin: int = 140,
+    margin: int = 90,
     max_shift_px: float = 70.0,
 ) -> str:
     canvas = prepare_canvas(image_path, out_w, out_h, margin)
