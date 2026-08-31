@@ -159,7 +159,7 @@ def prepare_canvas(image_path: str, out_w: int = 1080, out_h: int = 1920, margin
     top = (resized.height - canvas_h) // 2
     cropped = resized.crop((left, top, left + canvas_w, top + canvas_h))
     return np.array(cropped)  # RGB uint8, shape (canvas_h, canvas_w, 3)
-    
+
     
 def depth_parallax_clip(
     image_path: str,
@@ -168,9 +168,24 @@ def depth_parallax_clip(
     fps: int = 30,
     out_w: int = 1080,
     out_h: int = 1920,
-    margin: int = 90,
     max_shift_px: float = 70.0,
 ) -> str:
+    """
+    Generates a 2.5D parallax "camera push" from a single still image using
+    a MiDaS depth map -- runs entirely locally on CPU.
+
+    Push speed (px/sec) is held constant across durations: margin is
+    computed from the target shift distance for this specific duration,
+    so longer clips get proportionally more canvas headroom instead of
+    being capped by a fixed margin.
+    """
+    baseline_duration = 5  # the 70px default was tuned for a 5s clip
+    effective_max_shift = max_shift_px * (duration / baseline_duration)
+
+    # Margin needs to cover the max horizontal shift plus a bit of
+    # slack for the vertical component (shift * 0.25) and edge safety.
+    margin = int(effective_max_shift * 1.3) + 20
+
     canvas = prepare_canvas(image_path, out_w, out_h, margin)
     canvas_h, canvas_w = canvas.shape[:2]
     depth = estimate_depth(Image.fromarray(canvas))
@@ -185,13 +200,6 @@ def depth_parallax_clip(
     writer = cv2.VideoWriter(raw_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
 
     crop_x0, crop_y0 = margin, margin
-
-    # Scale max_shift_px by duration so push *speed* (px/sec) stays
-    # constant -- a 10s clip travels twice as far as a 5s clip, at the
-    # same rate, rather than covering the same distance more slowly.
-    baseline_duration = 5  # the 70px default was tuned for a 5s clip
-    effective_max_shift = max_shift_px * (duration / baseline_duration)
-    effective_max_shift = min(effective_max_shift, margin)  # never exceed available margin
 
     for i in range(total_frames):
         t = i / max(total_frames - 1, 1)
@@ -224,7 +232,7 @@ def depth_parallax_clip(
     subprocess.run(cmd, check=True, capture_output=True)
     os.remove(raw_path)
 
-    print(f"Depth parallax clip created at {output_path}")
+    print(f"Depth parallax clip created at {output_path} (margin={margin}px, max_shift={effective_max_shift:.1f}px)")
     return output_path
     
 
