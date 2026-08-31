@@ -5,6 +5,7 @@ import subprocess
 import sys
 from huggingface_hub import InferenceClient
 import requests
+import glob
 from nacl import encoding, public
 from datetime import datetime, timezone
 
@@ -115,7 +116,38 @@ def generate_image():
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
     return prompt
+    
 
+def add_background_music(video_path: str, output_path: str, duration: int) -> str:
+    """
+    Overlay a randomly chosen royalty-free track under the video,
+    trimmed to match the clip's duration, with a short fade-out.
+    """
+    music_files = glob.glob("assets/music/*.mp3")
+    if not music_files:
+        print("No music files found — skipping audio overlay.")
+        return video_path
+
+    music_path = random.choice(music_files)
+    print(f"Adding background music: {music_path}")
+
+    fade_start = max(duration - 1, 0)  # fade out in the last second
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-i", music_path,
+        "-filter_complex",
+        f"[1:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume=0.8[aud]",
+        "-map", "0:v",
+        "-map", "[aud]",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "128k",
+        "-shortest",
+        output_path,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return output_path
 
 def git_run(*args):
     result = subprocess.run(["git"] + list(args), capture_output=True, text=True)
@@ -504,8 +536,9 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
 # before that image gets deleted from the repo.
 # ---------------------------------------------------------------------------
 def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, all_ok):
-    raw_path = "assets/raw_video_temp.mp4"  # intermediate only, not committed
+    raw_path = "assets/raw_video_temp.mp4"
     vertical_path = VIDEO_FILENAME
+    final_path = "assets/generated_video_with_audio.mp4"
 
     try:
         generate_video_from_image(image_path, motion_prompt, raw_path)
@@ -519,10 +552,16 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
             print(f"Fallback clip generation also failed: {fallback_err}")
             return False
 
-    # Clean up the intermediate raw file if it exists (AI path only)
     if os.path.exists(raw_path):
         os.remove(raw_path)
 
+    # Add background music
+    try:
+        add_background_music(vertical_path, final_path, CLIP_DURATION_SECONDS)
+        os.replace(final_path, vertical_path)  # overwrite vertical_path with the audio version
+    except Exception as e:
+        print(f"Music overlay failed ({e}); uploading silent clip instead.")
+        
     # Commit the final video to the repo, same pattern as the image
     print("Committing video to repo...")
     git_run("add", vertical_path)
