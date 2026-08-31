@@ -583,7 +583,7 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    all_ok = run_youtube_short_step(IMAGE_FILENAME, motion_prompt, "Morning latte ritual ☕",all_ok)
+    all_ok = run_youtube_short_step(IMAGE_FILENAME, motion_prompt, f"Morning latte ritual ☕\n\n{prompt}", all_ok)
 
     if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
