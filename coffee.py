@@ -73,15 +73,18 @@ STYLE_MODIFIERS = [
     "high-contrast editorial photography",
 ]
 
-SUBJECT_VARIANTS = [
-    "a steaming cup of coffee",
-    "a rustic bag of whole coffee beans",
-    "a charming cafe exterior with an outdoor table",
-    "a barista's hands pouring latte art",
-    "a coffee cup next to an open journal",
-    "a French press and cup on a windowsill",
-    "an espresso machine with a fresh shot pulling",
-    "a coffee cup with steam rising, seen from above",
+# Weighted subject pool: cup-focused scenes appear ~70% of the time,
+# other coffee-adjacent scenes fill the remaining ~30% for variety.
+SUBJECT_VARIANTS_WEIGHTED = [
+    ("a steaming cup of coffee", 35),
+    ("a coffee cup with steam rising, seen from above", 15),
+    ("a coffee cup next to an open journal", 10),
+    ("a coffee cup on a windowsill with morning light", 10),
+    ("a rustic bag of whole coffee beans", 8),
+    ("a charming cafe exterior with an outdoor table", 8),
+    ("a barista's hands pouring latte art", 7),
+    ("a French press and cup on a windowsill", 4),
+    ("an espresso machine with a fresh shot pulling", 3),
 ]
 
 CAPTION_INTROS = [
@@ -95,11 +98,18 @@ CAPTION_INTROS = [
     "Today's coffee ritual ☕",
 ]
 
+
+def weighted_choice(pairs):
+    items, weights = zip(*pairs)
+    return random.choices(items, weights=weights, k=1)[0]
+
+    
 def generate_prompt():
     print("Generating prompt with Groq...")
 
     style = random.choice(STYLE_MODIFIERS)
-    subject = random.choice(SUBJECT_VARIANTS)
+    subject = weighted_choice(SUBJECT_VARIANTS_WEIGHTED)
+    print(f"Subject: {subject} | Style: {style}")
 
     system_instruction = (
         "You are a creative assistant that writes short, vivid prompts for an "
