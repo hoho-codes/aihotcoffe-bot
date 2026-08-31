@@ -25,8 +25,14 @@ jobs:
       - name: Ensure ffmpeg is present
         run: ffmpeg -version || sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: Cache HF model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-depth-model-dpt-hybrid-midas
+
       - name: Install dependencies
-        run: pip install huggingface_hub requests Pillow pynacl
+        run: pip install huggingface_hub requests pynacl opencv-python-headless numpy pillow transformers torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run daily coffee
         run: python coffee.py
