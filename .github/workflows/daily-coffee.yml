@@ -32,7 +32,7 @@ jobs:
           key: hf-depth-model-dpt-hybrid-midas
 
       - name: Install dependencies
-        run: pip install huggingface_hub requests pynacl opencv-python-headless numpy pillow transformers torch --index-url https://download.pytorch.org/whl/cpu
+        run: pip install huggingface_hub requests pynacl opencv-python-headless numpy pillow transformers torch --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run daily coffee
         run: python coffee.py
