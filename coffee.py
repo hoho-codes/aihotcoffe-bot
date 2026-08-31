@@ -8,6 +8,9 @@ import requests
 import glob
 from nacl import encoding, public
 from datetime import datetime, timezone
+import json
+
+LOG_FILENAME = "logs/posts.jsonl"
 
 # --- Config from environment/secrets ---
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
@@ -99,6 +102,43 @@ CAPTION_INTROS = [
 ]
 
 
+def log_post(prompt, subject, style, caption_intro, platform_results, video_effect=None, music_track=None):
+    """
+    Append one JSON record per run to a durable log file, committed to
+    the repo. Captures what was generated and how each platform responded,
+    for later duplicate-detection, seasonal tuning, or engagement review.
+    """
+    os.makedirs(os.path.dirname(LOG_FILENAME), exist_ok=True)
+
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "prompt": prompt,
+        "subject": subject,
+        "style": style,
+        "caption_intro": caption_intro,
+        "video_effect": video_effect,
+        "music_track": music_track,
+        "platforms": platform_results,
+    }
+
+    try:
+        with open(LOG_FILENAME, "a") as f:
+            f.write(json.dumps(record) + "\n")
+        print(f"Logged post record to {LOG_FILENAME}")
+    except Exception as e:
+        print(f"WARNING: failed to write post log: {e}")
+        return
+
+    git_run("add", LOG_FILENAME)
+    commit_result = git_run("commit", "-m", "Log daily post")
+    if commit_result.returncode == 0:
+        push_result = git_run("push")
+        if push_result.returncode != 0:
+            print("Log push failed — log saved locally but not persisted to remote.")
+    else:
+        print("Nothing new to commit for log (unexpected — check for issues).")
+
+
 def weighted_choice(pairs):
     items, weights = zip(*pairs)
     return random.choices(items, weights=weights, k=1)[0]
@@ -143,61 +183,67 @@ def generate_prompt():
             if not prompt:
                 raise ValueError("Groq returned an empty prompt")
             print(f"Generated prompt: {prompt}")
-            return prompt
+            return prompt, subject, style
         except Exception as e:
             last_err = e
             print(f"generate_prompt attempt {attempt + 1} failed ({e}); retrying...")
             time.sleep(5)
 
     print(f"Groq prompt generation failed after retries ({last_err}); using fallback prompt.")
-    return random.choice(FALLBACK_PROMPTS)
+    return random.choice(FALLBACK_PROMPTS), subject, style
+
 
 def generate_image():
     print("Generating image...")
-    #prompt = random.choice(PROMPTS)
-    prompt = generate_prompt()
+    prompt, subject, style = generate_prompt()
     client = InferenceClient(token=HF_TOKEN)
     client.headers["x-use-cache"] = "0"
 # model choices:
 # - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
 # - "stabilityai/stable-diffusion-xl-base-1.0"
     model_id = "black-forest-labs/FLUX.1-schnell"
-    image = client.text_to_image(prompt=prompt,model=model_id)
+    image = client.text_to_image(prompt=prompt, model=model_id)
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
-    return prompt
+    return prompt, subject, style
     
 
-def add_background_music(video_path: str, output_path: str, duration: int) -> str:
+def add_background_music(video_path: str, output_path: str, duration: int):
     music_files = glob.glob("assets/music/*.mp3")
     print(f"Found {len(music_files)} music file(s) in assets/music/")
     if not music_files:
         print("No music files found — skipping audio overlay.")
-        return video_path
+        return video_path, None
 
-    music_path = random.choice(music_files)
-    print(f"Adding background music: {music_path}")
+    random.shuffle(music_files)
 
-    fade_start = max(duration - 1, 0)
+    for music_path in music_files:
+        print(f"Trying background music: {music_path}")
+        fade_start = max(duration - 1, 0)
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", music_path,
+            "-filter_complex",
+            f"[1:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume=0.8[aud]",
+            "-map", "0:v",
+            "-map", "[aud]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "128k",
+            "-shortest",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"Successfully added music: {music_path}")
+            return output_path, os.path.basename(music_path)
+        else:
+            print(f"Track failed ({music_path}), trying next if available:\n{result.stderr[-500:]}")
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", video_path,
-        "-i", music_path,
-        "-filter_complex",
-        f"[1:a]atrim=0:{duration},afade=t=out:st={fade_start}:d=1,volume=0.8[aud]",
-        "-map", "0:v",
-        "-map", "[aud]",
-        "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "128k",
-        "-shortest",
-        output_path,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"ffmpeg audio overlay failed:\n{result.stderr}")
-        raise RuntimeError("ffmpeg audio overlay failed")
-    return output_path
+    print("All music tracks failed — uploading silent clip instead.")
+    return video_path, None
+
+
 def git_run(*args):
     result = subprocess.run(["git"] + list(args), capture_output=True, text=True)
     if result.returncode != 0:
@@ -229,6 +275,7 @@ def remove_image():
     git_run("rm", IMAGE_FILENAME)
     git_run("commit", "-m", "Remove published image")
     git_run("push")
+
 
 def remove_video():
     print("Removing video from repo...")
@@ -572,7 +619,7 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
     return f"{base},fade=t=in:st=0:d=0.5,fade=t=out:st={fade_out_start}:d=0.5"
 
 
-def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> str:
+def image_to_motion_clip(image_path: str, output_path: str, duration: int = None) -> tuple:
     duration = duration or CLIP_DURATION_SECONDS
     fps = 30
     effect = random.choice(EFFECTS)
@@ -588,7 +635,7 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
     ]
     subprocess.run(cmd, check=True, capture_output=True)
     print(f"Fallback motion clip created at {output_path} using '{effect}'")
-    return output_path 
+    return output_path, effect
 # ---------------------------------------------------------------------------
 # Glue -- call this with the same image_path and caption your existing
 # post_coffee.py already generated and used for Pinterest/Tumblr/Bluesky,
@@ -598,36 +645,39 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     raw_path = "assets/raw_video_temp.mp4"
     vertical_path = VIDEO_FILENAME
     final_path = "assets/generated_video_with_audio.mp4"
+    effect_used = None
+    music_used = None
 
     # try:
     #     generate_video_from_image(image_path, motion_prompt, raw_path)
     #     to_vertical_short(raw_path, vertical_path)
     #     print("Used AI-generated motion clip.")
+    #     effect_used = "ai_generated"
     # except Exception as e:
     #     print(f"AI video generation failed ({e}); falling back to ffmpeg zoompan.")
     #     try:
-    #         image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+    #         vertical_path, effect_used = image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
     #     except Exception as fallback_err:
     #         print(f"Fallback clip generation also failed: {fallback_err}")
-    #         return False
+    #         return False, None, None
 
     try:
-        image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
+            vertical_path, effect_used = image_to_motion_clip(image_path, vertical_path, duration=CLIP_DURATION_SECONDS)
     except Exception as fallback_err:
-        print(f"Fallback clip generation failed: {fallback_err}")
-        return False
+        print(f"Fallback clip generation also failed: {fallback_err}")
+        return False, None, None
 
+    
     if os.path.exists(raw_path):
         os.remove(raw_path)
 
-    # Add background music
     try:
-        add_background_music(vertical_path, final_path, CLIP_DURATION_SECONDS)
-        os.replace(final_path, vertical_path)  # overwrite vertical_path with the audio version
+        result_path, music_used = add_background_music(vertical_path, final_path, CLIP_DURATION_SECONDS)
+        if result_path != vertical_path:
+            os.replace(result_path, vertical_path)
     except Exception as e:
         print(f"Music overlay failed ({e}); uploading silent clip instead.")
-        
-    # Commit the final video to the repo, same pattern as the image
+
     print("Committing video to repo...")
     git_run("add", vertical_path)
     commit_result = git_run("commit", "-m", "Daily coffee video")
@@ -642,22 +692,24 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     res = publish_to_youtube(vertical_path, title, caption)
 
     if res is not None and res.ok:
-        print(f"Uploaded Short: {res.json().get('id')}")
-        return all_ok
+        video_id = res.json().get("id")
+        print(f"Uploaded Short: {video_id}")
+        return all_ok, effect_used, music_used
     else:
         print("YouTube Short upload failed; see error above.")
-        return False
+        return False, effect_used, music_used
 
 def main():
-    prompt = generate_image()
+    prompt, subject, style = generate_image()
     image_url = commit_image()
 
     time.sleep(30)
 
     all_ok = True
     caption_intro = random.choice(CAPTION_INTROS)
+    platform_results = {}
 
-        # --- Pinterest ---
+     # --- Pinterest ---
  #   pin_res = publish_to_pinterest(image_url, f"{caption_intro} {prompt}")
  #   if pin_res.status_code == 201:
  #       print("Pinterest: published successfully:", pin_res.json())
@@ -666,11 +718,13 @@ def main():
  #       all_ok = False
 
     # --- Bluesky ---
-    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"{caption_intro} {prompt}")
+    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"{caption_intro} \n\n{prompt}")
     if bsky_res is not None and bsky_res.status_code == 200:
         print("Bluesky: published successfully:", bsky_res.json())
+        platform_results["bluesky"] = {"status": "success", "uri": bsky_res.json().get("uri")}
     else:
         print(f"Bluesky: publish failed: {bsky_res.text if bsky_res else 'exception before request'}")
+        platform_results["bluesky"] = {"status": "failed"}
         all_ok = False
 
     # --- Tumblr ---
@@ -679,19 +733,32 @@ def main():
         tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"{caption_intro} \n\n{prompt}")
         if tumblr_res.status_code in (200, 201):
             print("Tumblr: published successfully:", tumblr_res.json())
+            platform_results["tumblr"] = {"status": "success", "id": tumblr_res.json()["response"].get("id")}
         else:
             print(f"Tumblr: publish failed ({tumblr_res.status_code}): {tumblr_res.text}")
+            platform_results["tumblr"] = {"status": "failed"}
             all_ok = False
     except Exception as e:
         print(f"Tumblr: error during refresh/publish: {e}")
+        platform_results["tumblr"] = {"status": "failed", "error": str(e)}
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    all_ok = run_youtube_short_step(IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}", all_ok)
+    yt_ok, effect_used, music_used = run_youtube_short_step(
+        IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}", all_ok
+    )
+    all_ok = yt_ok
+    platform_results["youtube"] = {"status": "success" if yt_ok else "failed", "effect": effect_used, "music": music_used}
+
+    log_post(prompt, subject, style, caption_intro, platform_results, video_effect=effect_used, music_track=music_used)
 
     if not all_ok:
         print("At least one platform failed — leaving image in repo for debugging.")
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
