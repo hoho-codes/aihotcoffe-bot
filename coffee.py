@@ -60,16 +60,27 @@ FALLBACK_PROMPTS = [
 # effect, so it gets picked more often, but the ffmpeg-only effects still
 # rotate in regularly for variety and as a natural fallback if depth
 # estimation ever misbehaves.
+# EFFECTS_WEIGHTED = [
+#     ("depth_parallax", 20),
+#     ("zoompan_in", 12),
+#     ("zoompan_out", 10),
+#     ("pan_horizontal", 10),
+#     ("diagonal_zoom", 10),
+#     ("breathing_zoom", 10),
+#     ("vignette_zoom", 10),
+#     ("color_drift", 9),
+#     ("grain_zoom", 9),
+# ]
 EFFECTS_WEIGHTED = [
-    ("depth_parallax", 20),
-    ("zoompan_in", 12),
-    ("zoompan_out", 10),
-    ("pan_horizontal", 10),
-    ("diagonal_zoom", 10),
-    ("breathing_zoom", 10),
-    ("vignette_zoom", 10),
-    ("color_drift", 9),
-    ("grain_zoom", 9),
+    ("depth_parallax", 0.125),
+    ("zoompan_in", 0.125),
+    ("zoompan_out", 0.125),
+    ("pan_horizontal", 0.125),
+    ("diagonal_zoom", 99),
+    ("breathing_zoom", 0.125),
+    ("vignette_zoom", 0.125),
+    ("color_drift", 0.125),
+    ("grain_zoom", 0.125),
 ]
 
 # --- Content variety pools ---
