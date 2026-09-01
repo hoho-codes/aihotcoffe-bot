@@ -359,8 +359,8 @@ def generate_image():
     image = client.text_to_image(
         prompt=prompt,
         model=model_id,
-        width=768,
-        height=1344,  # ~9:16 ratio, within FLUX's supported resolution range
+        width=1024,
+        height=1280,  # ~9:16 ratio, within FLUX's supported resolution range
     )
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
