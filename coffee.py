@@ -763,21 +763,14 @@ def publish_to_youtube(video_path: str, title: str, description: str, tags=None)
 
 def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
     total_frames = duration * fps
-
-    # Rates below are calibrated for a 5s baseline clip. Dividing each
-    # target total-motion amount by total_frames keeps the perceived
-    # speed constant regardless of duration -- a 10s clip reaches the
-    # same zoom/pan amount at the same wall-clock rate, just holds it
-    # longer, rather than ending up more zoomed/panned than a 5s clip.
-    baseline_frames = 5 * fps  # the rates below were tuned at 5s/150 frames
+    baseline_frames = 5 * fps
 
     zoom_increment = 0.0007 * (baseline_frames / total_frames)
-    pan_speed = 40  # px/sec, already duration-independent (uses t, not on)
+    pan_speed = 40
     diagonal_zoom_increment = 0.0005 * (baseline_frames / total_frames)
-    diagonal_pan_speed = 10  # already per-second via t
-    breathing_cycle_frames = 10  # oscillation period in frames -- keep this
-                                  # fixed so the "breathing" rate (cycles per
-                                  # second) stays the same regardless of duration
+    diagonal_pan_speed_per_sec = 10
+    diagonal_pan_speed_per_frame = diagonal_pan_speed_per_sec / fps  # convert px/sec -> px/frame for 'on'
+    breathing_cycle_frames = 10
     vignette_zoom_increment = 0.0007 * (baseline_frames / total_frames)
     color_drift_increment = 0.0006 * (baseline_frames / total_frames)
     grain_zoom_increment = 0.0007 * (baseline_frames / total_frames)
@@ -786,7 +779,7 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
         "zoompan_in": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps}",
         "zoompan_out": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-{zoom_increment}))':d={total_frames}:s=1080x1920:fps={fps}",
         "pan_horizontal": f"scale=1600:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='min(t*{pan_speed},iw-1080)':y=0",
-        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{diagonal_zoom_increment},1.2)':x='iw/2-(iw/zoom/2)+t*{diagonal_pan_speed}':y='ih/2-(ih/zoom/2)+t*{diagonal_pan_speed/2}':d={total_frames}:s=1080x1920:fps={fps}",
+        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{diagonal_zoom_increment},1.2)':x='iw/2-(iw/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame}':y='ih/2-(ih/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame/2}':d={total_frames}:s=1080x1920:fps={fps}",
         "breathing_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='1.1+0.05*sin(on/{breathing_cycle_frames})':d={total_frames}:s=1080x1920:fps={fps}",
         "vignette_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{vignette_zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps},vignette=PI/4",
         "color_drift": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.1,zoompan=z='min(zoom+{color_drift_increment},1.25)':d={total_frames}:s=1080x1920:fps={fps}",
