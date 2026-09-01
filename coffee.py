@@ -229,7 +229,10 @@ def depth_parallax_clip(
         "-t", str(duration),
         output_path,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg depth_parallax encode failed:\n{result.stderr}")
+        raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
     os.remove(raw_path)
 
     print(f"Depth parallax clip created at {output_path} (margin={margin}px, max_shift={effective_max_shift:.1f}px)")
@@ -809,7 +812,10 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
         output_path,
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ffmpeg fallback effect failed:\n{result.stderr}")
+        raise RuntimeError(f"ffmpeg exited with code {result.returncode}")
     print(f"Fallback motion clip created at {output_path} using '{effect}'")
     return output_path, effect
 # ---------------------------------------------------------------------------
