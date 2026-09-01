@@ -767,8 +767,8 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
 
     zoom_increment = 0.0007 * (baseline_frames / total_frames)
     pan_speed = 40
-    diagonal_zoom_increment = 0.0005 * (baseline_frames / total_frames)
-    diagonal_pan_speed_per_sec = 10
+    diagonal_zoom_increment = 0.0003 * (baseline_frames / total_frames)  # was 0.0005 -- gentler zoom too
+    diagonal_pan_speed_per_sec = 3  # was 10 -- much gentler drift
     diagonal_pan_speed_per_frame = diagonal_pan_speed_per_sec / fps  # convert px/sec -> px/frame for 'on'
     breathing_cycle_frames = 10
     vignette_zoom_increment = 0.0007 * (baseline_frames / total_frames)
@@ -779,7 +779,7 @@ def build_filter(effect_name: str, duration: int, fps: int = 30) -> str:
         "zoompan_in": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps}",
         "zoompan_out": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='if(eq(on,1),1.3,max(1.001,zoom-{zoom_increment}))':d={total_frames}:s=1080x1920:fps={fps}",
         "pan_horizontal": f"scale=1600:1920:force_original_aspect_ratio=increase,crop=1080:1920:x='min(t*{pan_speed},iw-1080)':y=0",
-        "diagonal_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{diagonal_zoom_increment},1.2)':x='iw/2-(iw/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame}':y='ih/2-(ih/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame/2}':d={total_frames}:s=1080x1920:fps={fps}",
+        "diagonal_zoom": f"scale=1080:1920:flags=lanczos:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{diagonal_zoom_increment},1.2)':x='iw/2-(iw/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame}':y='ih/2-(ih/max(zoom\\,1)/2)+on*{diagonal_pan_speed_per_frame/2}':d={total_frames}:s=1080x1920:fps={fps}",
         "breathing_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='1.1+0.05*sin(on/{breathing_cycle_frames})':d={total_frames}:s=1080x1920:fps={fps}",
         "vignette_zoom": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+{vignette_zoom_increment},1.3)':d={total_frames}:s=1080x1920:fps={fps},vignette=PI/4",
         "color_drift": f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=saturation=1.1,zoompan=z='min(zoom+{color_drift_increment},1.25)':d={total_frames}:s=1080x1920:fps={fps}",
