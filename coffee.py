@@ -289,6 +289,7 @@ def generate_prompt():
         "You are a creative assistant that writes short, vivid prompts for an "
         "AI image generator. Each prompt must feature this subject: "
         f"{subject}. Render it in this style: {style}. "
+        "Compose the scene vertically, with the subject centered and filling the frame. "
         "Describe lighting, setting, and mood, under 25 words total. "
         "Do not repeat common phrasing. Return ONLY the prompt text, nothing else."
     )
@@ -336,7 +337,17 @@ def generate_image():
 # - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
 # - "stabilityai/stable-diffusion-xl-base-1.0"
     model_id = "black-forest-labs/FLUX.1-schnell"
-    image = client.text_to_image(prompt=prompt, model=model_id)
+
+    # Generate in a vertical aspect ratio close to Shorts (9:16), so the
+    # subject lands centered by default rather than relying on the video
+    # pipeline's crop/pad step to compensate afterward. FLUX.1-schnell
+    # supports arbitrary width/height in multiples of 16.
+    image = client.text_to_image(
+        prompt=prompt,
+        model=model_id,
+        width=768,
+        height=1344,  # ~9:16 ratio, within FLUX's supported resolution range
+    )
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
     return prompt, subject, style
