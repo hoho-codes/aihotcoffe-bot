@@ -783,8 +783,9 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
             depth_parallax_clip(image_path, output_path, duration=duration)
             return output_path, "depth_parallax"
         except Exception as e:
-            print(f"Depth parallax failed ({e}); falling back to a zoompan effect instead.")
-            effect = random.choice([e for e, _ in EFFECTS_WEIGHTED if e != "depth_parallax"])
+            print(f"Depth parallax failed ({e}); falling back to a weighted zoompan effect instead.")
+            fallback_pool = [(e, w) for e, w in EFFECTS_WEIGHTED if e != "depth_parallax"]
+            effect = weighted_choice(fallback_pool)
 
     fps = 30
     print(f"Using effect: {effect}")
