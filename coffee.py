@@ -93,7 +93,7 @@ STYLE_MODIFIERS = [
     "soft watercolor illustration style",
     "moody noir black and white style",
     "minimalist line art style",
-    "vintage polaroid aesthetic",
+    "vintage polaroid color grading, no border or frame, full-bleed photo",
     "cinematic golden-hour photography",
     "cozy hand-drawn illustration style",
     "high-contrast editorial photography",
@@ -307,6 +307,9 @@ def generate_prompt():
         "AI image generator. Each prompt must feature this subject: "
         f"{subject}. Render it in this style: {style}. "
         "Compose the scene vertically, with the subject centered and filling the frame. "
+        "The final image must be a full-bleed photo or illustration with no "
+        "borders, frames, white margins, or visible photo-paper edges — "
+        "describe only the scene itself, in style, not as a photographed object. "
         "Describe lighting, setting, and mood, under 25 words total. "
         "Do not repeat common phrasing. Return ONLY the prompt text, nothing else."
     )
