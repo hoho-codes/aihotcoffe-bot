@@ -360,7 +360,7 @@ def generate_image():
         prompt=prompt,
         model=model_id,
         width=1024,
-        height=1280,  # ~9:16 ratio, within FLUX's supported resolution range
+        height=1280,  # ~4:5 ratio, within FLUX's supported resolution range
     )
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
