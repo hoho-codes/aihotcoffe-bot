@@ -806,7 +806,7 @@ def image_to_motion_clip(image_path: str, output_path: str, duration: int = None
 # post_coffee.py already generated and used for Pinterest/Tumblr/Bluesky,
 # before that image gets deleted from the repo.
 # ---------------------------------------------------------------------------
-def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, all_ok):
+def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str):
     raw_path = "assets/raw_video_temp.mp4"
     vertical_path = VIDEO_FILENAME
     final_path = "assets/generated_video_with_audio.mp4"
@@ -859,7 +859,7 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str, al
     if res is not None and res.ok:
         video_id = res.json().get("id")
         print(f"Uploaded Short: {video_id}")
-        return all_ok, effect_used, music_used
+        return True, effect_used, music_used
     else:
         print("YouTube Short upload failed; see error above.")
         return False, effect_used, music_used
@@ -909,9 +909,9 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    all_ok, effect_used, music_used = run_youtube_short_step(
-        IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}", all_ok
-    )
+    yt_ok, effect_used, music_used = run_youtube_short_step(
+        IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}")
+    all_ok = all_ok and yt_ok
     platform_results["youtube"] = {"status": "success" if yt_ok else "failed", "effect": effect_used, "music": music_used}
 
     log_post(prompt, subject, style, caption_intro, platform_results, video_effect=effect_used, music_track=music_used)
