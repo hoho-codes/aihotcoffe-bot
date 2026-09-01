@@ -908,10 +908,9 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
-    yt_ok, effect_used, music_used = run_youtube_short_step(
+    all_ok, effect_used, music_used = run_youtube_short_step(
         IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}", all_ok
     )
-    all_ok = yt_ok
     platform_results["youtube"] = {"status": "success" if yt_ok else "failed", "effect": effect_used, "music": music_used}
 
     log_post(prompt, subject, style, caption_intro, platform_results, video_effect=effect_used, music_track=music_used)
