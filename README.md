@@ -1,6 +1,6 @@
 # ☕ Coffee Content Pipeline
 
-> Automated coffee content generation and publishing with GitHub Actions.
+### Automated coffee content generation and publishing with GitHub Actions.
 
 ---
 
