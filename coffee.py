@@ -25,8 +25,7 @@ HF_VIDEO_PROVIDER = os.environ.get("HF_VIDEO_PROVIDER", "hf-inference")
 CLIP_DURATION_SECONDS = int(os.environ.get("CLIP_DURATION_SECONDS", "7"))
 #PINTEREST_TOKEN = os.environ["PINTEREST_TOKEN"]
 #BOARD_ID = os.environ["PINTEREST_BOARD_ID"]
-GITHUB_REPO = os.environ["GITHUB_REPOSITORY"]  # auto-set by GitHub Actions, e.g. "user/repo"
-GITHUB_BRANCH = os.environ.get("GITHUB_REF_NAME", "coffee")
+
 IMAGE_FILENAME = "assets/generated_image.png"
 VIDEO_FILENAME = "assets/generated_video.mp4"
 
