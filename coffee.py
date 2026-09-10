@@ -688,19 +688,6 @@ def to_vertical_short(input_path: str, output_path: str) -> str:
 # 2. YouTube upload (OAuth2 refresh token, resumable upload)
 # ---------------------------------------------------------------------------
 def yt_refresh_access_token() -> str:
-    """
-    Exchange the long-lived refresh token for a fresh ~1hr access token.
-    Unlike Tumblr, YouTube/Google does NOT rotate the refresh token on
-    each use once your OAuth consent screen is in "Production" status --
-    the same refresh token keeps working indefinitely (until unused for
-    6 months, revoked, or your client secret is rotated). Store it once
-    as a repo secret and forget about it.
- 
-    If your consent screen is still in "Testing" status, Google expires
-    refresh tokens after 7 days regardless of use -- that will silently
-    break an unattended daily cron, so this is worth resolving (submit
-    for verification / publish to production) before relying on this.
-    """
     res = requests.post(
         "https://oauth2.googleapis.com/token",
         data={
@@ -711,6 +698,8 @@ def yt_refresh_access_token() -> str:
         },
         timeout=30,
     )
+    if not res.ok:
+        print(f"YouTube token refresh error body: {res.text}")
     res.raise_for_status()
     return res.json()["access_token"]
  
