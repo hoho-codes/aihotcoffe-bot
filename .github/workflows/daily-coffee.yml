@@ -1,8 +1,8 @@
 name: Todays Coffee
 
 on:
-  #schedule:
-  #  - cron: "0 13 * * *"   # 13:00 UTC daily — adjust to your preferred time
+  schedule:
+    - cron: "0 13 * * *"   # 13:00 UTC daily — adjust to your preferred time
   workflow_dispatch: {}      # allows manual runs from the Actions tab for testing
 
 permissions:
