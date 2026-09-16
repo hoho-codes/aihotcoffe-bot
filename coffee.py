@@ -125,6 +125,16 @@ CAPTION_INTROS = [
 
 _DEPTH_PIPE = None
 
+PLATFORM_LINKS = {
+    "bluesky": "https://bsky.app/profile/aihotcoffee.bsky.social",
+    "tumblr": "https://www.tumblr.com/aihotcoffee",
+    "youtube": "https://www.youtube.com/@aihotcoffeeplease",
+}
+
+def other_platforms_block(exclude: str) -> str:
+    """Returns a text block linking to every platform except `exclude`."""
+    lines = [f"{name.capitalize()}: {url}" for name, url in PLATFORM_LINKS.items() if name != exclude]
+    return "Also on:\n" + "\n".join(lines)
 
 def _get_depth_pipe():
     """Loads the MiDaS depth model once per process. dpt-hybrid-midas is a
@@ -352,24 +362,20 @@ def generate_image():
     prompt, subject, style = generate_prompt()
     client = InferenceClient(token=HF_TOKEN)
     client.headers["x-use-cache"] = "0"
-# model choices:
+    # model choices:
 # - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
 # - "stabilityai/stable-diffusion-xl-base-1.0"
     model_id = "black-forest-labs/FLUX.1-schnell"
 
-    # Generate in a vertical aspect ratio close to Shorts (9:16), so the
-    # subject lands centered by default rather than relying on the video
-    # pipeline's crop/pad step to compensate afterward. FLUX.1-schnell
-    # supports arbitrary width/height in multiples of 16.
     image = client.text_to_image(
         prompt=prompt,
         model=model_id,
         width=1024,
-        height=1280,  # ~4:5 ratio, within FLUX's supported resolution range
+        height=1280,
     )
     image.save(IMAGE_FILENAME)
     print(f"Saved image for prompt: {prompt}")
-    return prompt, subject, style
+    return prompt, subject, style, model_id
     
 
 def add_background_music(video_path: str, output_path: str, duration: int):
@@ -881,7 +887,7 @@ def run_youtube_short_step(image_path: str, motion_prompt: str, caption: str):
         return False, effect_used, music_used
 
 def main():
-    prompt, subject, style = generate_image()
+    prompt, subject, style, model_id = generate_image()
     image_url = commit_image()
 
     time.sleep(30)
@@ -890,7 +896,7 @@ def main():
     caption_intro = random.choice(CAPTION_INTROS)
     platform_results = {}
 
-     # --- Pinterest ---
+ # --- Pinterest ---
  #   pin_res = publish_to_pinterest(image_url, f"{caption_intro} {prompt}")
  #   if pin_res.status_code == 201:
  #       print("Pinterest: published successfully:", pin_res.json())
@@ -899,7 +905,8 @@ def main():
  #       all_ok = False
 
     # --- Bluesky ---
-    bsky_res = publish_to_bluesky(IMAGE_FILENAME, f"{caption_intro} \n\n{prompt}")
+    bsky_caption = f"{caption_intro}\n\n{prompt}\n\n{other_platforms_block('bluesky')}"
+    bsky_res = publish_to_bluesky(IMAGE_FILENAME, bsky_caption)
     if bsky_res is not None and bsky_res.status_code == 200:
         print("Bluesky: published successfully:", bsky_res.json())
         platform_results["bluesky"] = {"status": "success", "uri": bsky_res.json().get("uri")}
@@ -911,7 +918,8 @@ def main():
     # --- Tumblr ---
     try:
         tumblr_access_token = refresh_tumblr_token()
-        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, f"{caption_intro} \n\n{prompt}")
+        tumblr_caption = f"{caption_intro}\n\n{prompt}\n\nGenerated with {model_id}\n\n{other_platforms_block('tumblr')}"
+        tumblr_res = publish_to_tumblr(tumblr_access_token, image_url, tumblr_caption)
         if tumblr_res.status_code in (200, 201):
             print("Tumblr: published successfully:", tumblr_res.json())
             platform_results["tumblr"] = {"status": "success", "id": tumblr_res.json()["response"].get("id")}
@@ -925,8 +933,13 @@ def main():
         all_ok = False
 
     motion_prompt = "steam gently rising from the cup, soft ambient light flicker"
+    yt_description = (
+        f"{caption_intro} #Shorts\n\n{prompt}\n\n"
+        f"Generated with {model_id}\n\n"
+        f"{other_platforms_block('youtube')}"
+    )
     yt_ok, effect_used, music_used = run_youtube_short_step(
-        IMAGE_FILENAME, motion_prompt, f"{caption_intro} #Shorts\n\n{prompt}")
+        IMAGE_FILENAME, motion_prompt, yt_description)
     all_ok = all_ok and yt_ok
     platform_results["youtube"] = {"status": "success" if yt_ok else "failed", "effect": effect_used, "music": music_used}
 
