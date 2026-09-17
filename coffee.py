@@ -126,9 +126,9 @@ CAPTION_INTROS = [
 _DEPTH_PIPE = None
 
 PLATFORM_LINKS = {
-    "bluesky": "https://bsky.app/profile/aihotcoffee.bsky.social",
-    "tumblr": "https://www.tumblr.com/aihotcoffee",
-    "youtube": "https://www.youtube.com/@aihotcoffeeplease",
+    "bluesky": "bsky.app/profile/aihotcoffee.bsky.social",
+    "tumblr": "tumblr.com/aihotcoffee",
+    "youtube": "youtube.com/@aihotcoffeeplease",
 }
 
 def other_platforms_block(exclude: str) -> str:
