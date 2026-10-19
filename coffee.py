@@ -46,6 +46,10 @@ YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET"]
 YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN"]
 YT_PRIVACY_STATUS = os.environ.get("YT_PRIVACY_STATUS", "unlisted")
 
+LOGFARE_URL = "https://logfare.ai/v1/images/generations"
+LOGFARE_MODEL = "flux-1-schnell"
+LOGFARE_API_KEY = os.environ.get("LOGFARE_API_KEY", "")
+
 FALLBACK_PROMPTS = [
     "a steaming latte on a rustic wooden cafe table, morning sunlight, cozy atmosphere",
     "a cappuccino with latte art next to an open book, cozy cafe interior, soft light",
@@ -357,24 +361,88 @@ def generate_prompt():
     return random.choice(FALLBACK_PROMPTS), subject, style
 
 
+def generate_logfare(prompt, model, token, width, height, output):
+    """
+    Generates an image via the Logfare API and saves it to `output`.
+    Raises on any failure (bad response shape, decode error, network
+    error) so the caller can fall through to the next image source.
+    """
+    import base64
+    import sys
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "size": f"{width}x{height}",
+    }
+    response = requests.post(
+        LOGFARE_URL,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        json=payload,
+        timeout=300,
+    )
+    response.raise_for_status()
+    data = response.json()
+    try:
+        image_b64 = data["data"][0]["b64_json"]
+    except (KeyError, IndexError, TypeError):
+        print("Unexpected Logfare response:", data, file=sys.stderr)
+        raise RuntimeError("Logfare did not return base64 image data.")
+    try:
+        image_bytes = base64.b64decode(image_b64)
+    except Exception as e:
+        raise RuntimeError(f"Failed to decode Logfare image: {e}")
+    with open(output, "wb") as f:
+        f.write(image_bytes)
+
+
 def generate_image():
     print("Generating image...")
     prompt, subject, style = generate_prompt()
-    client = InferenceClient(token=HF_TOKEN)
-    client.headers["x-use-cache"] = "0"
     # model choices:
-# - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
-# - "stabilityai/stable-diffusion-xl-base-1.0"
+    # - "black-forest-labs/FLUX.1-schnell" (State-of-the-art high quality)
+    # - "stabilityai/stable-diffusion-xl-base-1.0"
     model_id = "black-forest-labs/FLUX.1-schnell"
 
-    image = client.text_to_image(
-        prompt=prompt,
-        model=model_id,
-        width=1024,
-        height=1280,
-    )
-    image.save(IMAGE_FILENAME)
-    print(f"Saved image for prompt: {prompt}")
+    try:
+        client = InferenceClient(token=HF_TOKEN)
+        client.headers["x-use-cache"] = "0"
+
+        image = client.text_to_image(
+            prompt=prompt,
+            model=model_id,
+            width=1024,
+            height=1280,
+        )
+        image.save(IMAGE_FILENAME)
+        print(f"Saved image for prompt: {prompt}")
+    except Exception as hf_err:
+        print(f"Hugging Face generation failed ({hf_err}); trying Logfare.")
+        if not LOGFARE_URL or not LOGFARE_API_KEY or not LOGFARE_MODEL:
+            raise RuntimeError(
+                f"Hugging Face failed ({hf_err}) and Logfare is not configured "
+                "(missing LOGFARE_URL/LOGFARE_API_KEY/LOGFARE_MODEL)."
+            )
+        try:
+            generate_logfare(
+                prompt,
+                LOGFARE_MODEL,
+                LOGFARE_API_KEY,
+                1024,
+                1280,
+                IMAGE_FILENAME,
+            )
+        except Exception as logfare_err:
+            raise RuntimeError(
+                f"All image sources failed. Hugging Face: {hf_err}. "
+                f"Logfare: {logfare_err}."
+            )
+        model_id = LOGFARE_MODEL
+        print(f"Saved image via Logfare for prompt: {prompt}")
+
     return prompt, subject, style, model_id
     
 
