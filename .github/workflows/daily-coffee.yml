@@ -54,3 +54,4 @@ jobs:
           # passed the audit; flip to "public" only after that clears
           YT_PRIVACY_STATUS: ${{ secrets.YT_PRIVACY_STATUS }}
           GH_PAT: ${{ secrets.GH_PAT }}
+          LOGFARE_API_KEY: ${{ secrets.LOGFARE_API_KEY }}
